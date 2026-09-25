@@ -1,0 +1,2 @@
+# eventcrew_volunteer_management_SE3090_03
+AI-Powered Event Volunteer Management Platform
