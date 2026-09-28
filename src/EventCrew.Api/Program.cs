@@ -1,3 +1,4 @@
+using EventCrew.Api.Services;
 using EventCrew.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,9 +9,10 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Register AppDbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddScoped<IVenueService, VenueService>();
 
 var app = builder.Build();
 
