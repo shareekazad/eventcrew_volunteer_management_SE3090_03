@@ -58,4 +58,5 @@ public class Event
     public Venue? Venue { get; set; }
 
     public ICollection<RoleRequirement> RoleRequirements { get; set; } = new List<RoleRequirement>();
+    public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
 }

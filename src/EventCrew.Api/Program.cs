@@ -1,19 +1,26 @@
+using System.Data.Common;
 using EventCrew.Api.Services;
 using EventCrew.Infrastructure.Data;
+using EventCrew.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ---- Services ----
-builder.Services.AddControllers();
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("Connection string 'DefaultConnection' is required.");
+}
 
-// CORS — allow Flutter web app (localhost, any port) + deployed frontend
+builder.Services.AddControllers();
+builder.Services.AddProblemDetails();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontends", policy =>
     {
         policy
-            .SetIsOriginAllowed(_ => true)      // allow localhost:anyport during dev
+            .SetIsOriginAllowed(_ => true)
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -22,25 +29,23 @@ builder.Services.AddCors(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Database
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
+builder.Services.AddDbContext<EventCrewDbContext>(options =>
+    options.UseNpgsql(connectionString));
 
-// Application services
 builder.Services.AddScoped<IVenueService, VenueService>();
 builder.Services.AddScoped<IEventService, EventService>();
 
-// AI service (Python) — typed HttpClient
 builder.Services.AddHttpClient<IAgentService, AgentService>(client =>
 {
     client.BaseAddress = new Uri(
         builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000");
     client.Timeout = TimeSpan.FromSeconds(45);
 });
-
 var app = builder.Build();
+app.UseExceptionHandler();
 
-// ---- Middleware pipeline ----
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -48,11 +53,25 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
-
 app.UseCors("AllowFrontends");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+app.MapGet("/health/database", async (EventCrewDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return await dbContext.Database.CanConnectAsync(cancellationToken)
+            ? Results.Ok(new { status = "ok" })
+            : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (DbException)
+    {
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+})
+.WithName("DatabaseHealth")
+.WithOpenApi();
 
 app.Run();
