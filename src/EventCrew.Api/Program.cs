@@ -1,4 +1,18 @@
+using System.Data.Common;
+using EventCrew.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("EventCrew");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("Connection string 'EventCrew' is required.");
+}
+
+builder.Services.AddDbContext<EventCrewDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddControllers();
+builder.Services.AddProblemDetails();
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -6,6 +20,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -15,6 +30,23 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.MapControllers();
+
+app.MapGet("/health/database", async (EventCrewDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return await dbContext.Database.CanConnectAsync(cancellationToken)
+            ? Results.Ok(new { status = "ok" })
+            : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (DbException)
+    {
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+})
+.WithName("DatabaseHealth")
+.WithOpenApi();
 
 var summaries = new[]
 {
