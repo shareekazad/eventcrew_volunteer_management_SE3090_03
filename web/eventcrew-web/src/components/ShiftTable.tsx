@@ -4,7 +4,7 @@ import type { Shift } from '../types/shift'
 
 type ShiftTableProps = {
   shifts: Shift[]
-  eventName: string
+  eventName: (eventId: string) => string
   requirementNames: Record<string, string>
   onEdit: (shift: Shift) => void
   onDelete: (shift: Shift) => void
@@ -21,8 +21,8 @@ export default function ShiftTable({ shifts, eventName, requirementNames, onEdit
             const end = new Date(shift.endTime)
             return (
               <tr key={shift.id}>
-                <td className="title-cell">{shift.title}</td><td>{eventName}</td>
-                <td>{requirementNames[shift.roleRequirementId] ?? 'General volunteer'}</td>
+                <td className="title-cell">{shift.title}</td><td>{eventName(shift.eventId)}</td>
+                <td>{requirementNames[shift.roleRequirementId] ?? `Requirement ${shift.roleRequirementId.slice(0, 8)}`}</td>
                 <td>{start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td>
                 <td>{start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td><td>{end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
                 <td>{shift.capacity}</td><td><ShiftStatusBadge status={shift.status} /></td>

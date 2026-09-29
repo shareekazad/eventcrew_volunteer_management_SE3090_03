@@ -8,10 +8,12 @@ type ShiftModalProps = {
   eventOptions: { id: string; name: string }[]
   requirementOptions: { id: string; name: string }[]
   onClose: () => void
-  onSave: (values: ShiftFormValues, id?: string) => void
+  isSaving: boolean
+  onSave: (values: ShiftFormValues, id?: string) => Promise<void>
 }
 
 type FormErrors = Partial<Record<keyof ShiftFormValues, string>>
+const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function toLocalInput(value?: string) {
   if (!value) return ''
@@ -30,7 +32,7 @@ function initialValues(shift: Shift | null | undefined, eventId: string): ShiftF
   }
 }
 
-export default function ShiftModal({ shift, eventId, eventOptions, requirementOptions, onClose, onSave }: ShiftModalProps) {
+export default function ShiftModal({ shift, eventId, eventOptions, requirementOptions, isSaving, onClose, onSave }: ShiftModalProps) {
   const [values, setValues] = useState(() => initialValues(shift, eventId))
   const [errors, setErrors] = useState<FormErrors>({})
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -67,8 +69,8 @@ export default function ShiftModal({ shift, eventId, eventOptions, requirementOp
   const validate = () => {
     const next: FormErrors = {}
     if (!values.title.trim()) next.title = 'Enter a title for this shift.'
-    if (!values.eventId) next.eventId = 'Choose an event.'
-    if (!values.roleRequirementId) next.roleRequirementId = 'Choose a role requirement.'
+    if (!guidPattern.test(values.eventId)) next.eventId = 'Enter a valid event ID.'
+    if (!guidPattern.test(values.roleRequirementId)) next.roleRequirementId = 'Enter a valid role requirement ID.'
     if (!values.date) next.date = 'Choose a date for this shift.'
     if (!values.startTime) next.startTime = 'Enter a start time.'
     if (!values.endTime) next.endTime = 'Enter an end time.'
@@ -78,9 +80,9 @@ export default function ShiftModal({ shift, eventId, eventOptions, requirementOp
     return Object.keys(next).length === 0
   }
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (validate()) onSave(values, shift?.id)
+    if (validate()) await onSave(values, shift?.id)
   }
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
@@ -92,12 +94,12 @@ export default function ShiftModal({ shift, eventId, eventOptions, requirementOp
               <input id="shift-title" ref={titleRef} value={values.title} maxLength={150} aria-invalid={Boolean(errors.title)} aria-describedby={errors.title ? 'title-error' : undefined} onChange={(event) => update('title', event.target.value)} placeholder="e.g. Guest check-in" />
               {errors.title && <span className="field-error" id="title-error">{errors.title}</span>}
             </label>
-            <label className="form-field" htmlFor="shift-event">Event
-              <select id="shift-event" value={values.eventId} aria-invalid={Boolean(errors.eventId)} aria-describedby={errors.eventId ? 'event-error' : undefined} onChange={(event) => update('eventId', event.target.value)}><option value="">Select event</option>{eventOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select>
+            <label className="form-field" htmlFor="shift-event">Event ID
+              {eventOptions.length ? <select id="shift-event" value={values.eventId} aria-invalid={Boolean(errors.eventId)} aria-describedby={errors.eventId ? 'event-error' : undefined} onChange={(event) => update('eventId', event.target.value)}><option value="">Select event</option>{eventOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select> : <input id="shift-event" value={values.eventId} aria-invalid={Boolean(errors.eventId)} aria-describedby={errors.eventId ? 'event-error' : undefined} onChange={(event) => update('eventId', event.target.value)} placeholder="Event UUID" />}
               {errors.eventId && <span className="field-error" id="event-error">{errors.eventId}</span>}
             </label>
-            <label className="form-field" htmlFor="shift-requirement">Requirement
-              <select id="shift-requirement" value={values.roleRequirementId} aria-invalid={Boolean(errors.roleRequirementId)} aria-describedby={errors.roleRequirementId ? 'requirement-error' : undefined} onChange={(event) => update('roleRequirementId', event.target.value)}><option value="">Select requirement</option>{requirementOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select>
+            <label className="form-field" htmlFor="shift-requirement">Role requirement ID
+              {requirementOptions.length ? <select id="shift-requirement" value={values.roleRequirementId} aria-invalid={Boolean(errors.roleRequirementId)} aria-describedby={errors.roleRequirementId ? 'requirement-error' : undefined} onChange={(event) => update('roleRequirementId', event.target.value)}><option value="">Select requirement</option>{requirementOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select> : <input id="shift-requirement" value={values.roleRequirementId} aria-invalid={Boolean(errors.roleRequirementId)} aria-describedby={errors.roleRequirementId ? 'requirement-error' : undefined} onChange={(event) => update('roleRequirementId', event.target.value)} placeholder="Role requirement UUID" />}
               {errors.roleRequirementId && <span className="field-error" id="requirement-error">{errors.roleRequirementId}</span>}
             </label>
             <label className="form-field" htmlFor="shift-date">Date
@@ -117,7 +119,7 @@ export default function ShiftModal({ shift, eventId, eventOptions, requirementOp
               {errors.endTime && <span className="field-error" id="end-error">{errors.endTime}</span>}
             </label>
           </div>
-          <div className="modal-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit">{isEditing ? 'Save changes' : 'Create shift'}</button></div>
+          <div className="modal-actions"><button className="button button-secondary" type="button" onClick={onClose} disabled={isSaving}>Cancel</button><button className="button button-primary" type="submit" disabled={isSaving}>{isSaving ? 'Saving…' : isEditing ? 'Save changes' : 'Create shift'}</button></div>
         </form>
       </div>
     </div>

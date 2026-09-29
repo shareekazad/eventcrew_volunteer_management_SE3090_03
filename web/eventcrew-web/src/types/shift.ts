@@ -1,4 +1,4 @@
-export type ShiftStatus = 'Open' | 'Full' | 'Completed' | 'Cancelled'
+export type ShiftStatus = 'Draft' | 'Scheduled' | 'InProgress' | 'Completed' | 'Cancelled'
 
 export type Shift = {
   id: string
@@ -9,6 +9,17 @@ export type Shift = {
   endTime: string
   capacity: number
   status: ShiftStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export type ShiftWriteRequest = {
+  title: string
+  eventId: string
+  roleRequirementId: string
+  startTime: string
+  endTime: string
+  capacity: number
 }
 
 export type ShiftFormValues = {
