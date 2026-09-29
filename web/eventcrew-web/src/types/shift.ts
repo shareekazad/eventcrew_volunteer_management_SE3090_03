@@ -10,6 +10,8 @@ export type Shift = {
   startTime: string
   endTime: string
   capacity: number
+  assignedCount: number
+  remainingCapacity: number
   status: ShiftStatus
   createdAt: string
   updatedAt: string

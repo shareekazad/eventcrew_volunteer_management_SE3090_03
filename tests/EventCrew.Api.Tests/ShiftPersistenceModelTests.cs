@@ -58,5 +58,23 @@ public class ShiftPersistenceModelTests
             foreignKey.Properties.Single().GetColumnName(requirementTable) == "event_id" &&
             foreignKey.PrincipalEntityType.ClrType == typeof(Event) &&
             foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
+
+        var assignment = context.Model.FindEntityType(typeof(ShiftAssignment));
+        Assert.NotNull(assignment);
+        Assert.Equal("shift_assignments", assignment.GetTableName());
+        var assignmentTable = StoreObjectIdentifier.Table("shift_assignments", null);
+        Assert.Contains(assignment.GetProperties(), property => property.GetColumnName(assignmentTable) == "volunteer_id");
+        Assert.Contains(assignment.GetIndexes(), index =>
+            index.IsUnique &&
+            index.Properties.Select(property => property.GetColumnName(assignmentTable))
+                .SequenceEqual(["shift_id", "volunteer_id"]));
+        Assert.Contains(assignment.GetForeignKeys(), foreignKey =>
+            foreignKey.Properties.Single().GetColumnName(assignmentTable) == "shift_id" &&
+            foreignKey.PrincipalEntityType.ClrType == typeof(Shift) &&
+            foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
+        Assert.Contains(assignment.GetForeignKeys(), foreignKey =>
+            foreignKey.Properties.Single().GetColumnName(assignmentTable) == "volunteer_id" &&
+            foreignKey.PrincipalEntityType.ClrType == typeof(VolunteerProfile) &&
+            foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
     }
 }
