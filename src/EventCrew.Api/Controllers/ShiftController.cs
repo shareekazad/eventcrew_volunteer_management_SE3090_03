@@ -17,23 +17,9 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<IReadOnlyList<ShiftResponse>>> GetAll(CancellationToken cancellationToken)
     {
-        var shifts = await dbContext.Shifts
-            .AsNoTracking()
+        var shifts = await ProjectShifts(dbContext.Shifts.AsNoTracking())
             .OrderBy(shift => shift.StartTime)
             .ThenBy(shift => shift.Id)
-            .Select(shift => new ShiftResponse(
-                shift.Id,
-                shift.EventId,
-                shift.RoleRequirementId,
-                shift.Title,
-                shift.Event.Title,
-                shift.RoleRequirement.RoleName,
-                shift.StartTime,
-                shift.EndTime,
-                shift.Capacity,
-                shift.Status,
-                shift.CreatedAt,
-                shift.UpdatedAt))
             .ToListAsync(cancellationToken);
 
         return Ok(shifts);
@@ -46,22 +32,8 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ShiftResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var shift = await dbContext.Shifts
-            .AsNoTracking()
+        var shift = await ProjectShifts(dbContext.Shifts.AsNoTracking())
             .Where(candidate => candidate.Id == id)
-            .Select(shift => new ShiftResponse(
-                shift.Id,
-                shift.EventId,
-                shift.RoleRequirementId,
-                shift.Title,
-                shift.Event.Title,
-                shift.RoleRequirement.RoleName,
-                shift.StartTime,
-                shift.EndTime,
-                shift.Capacity,
-                shift.Status,
-                shift.CreatedAt,
-                shift.UpdatedAt))
             .SingleOrDefaultAsync(cancellationToken);
 
         return shift is null ? NotFound(CreateNotFoundProblem("Shift", id)) : Ok(shift);
@@ -100,22 +72,8 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         dbContext.Shifts.Add(shift);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var response = await dbContext.Shifts
-            .AsNoTracking()
+        var response = await ProjectShifts(dbContext.Shifts.AsNoTracking())
             .Where(candidate => candidate.Id == shift.Id)
-            .Select(candidate => new ShiftResponse(
-                candidate.Id,
-                candidate.EventId,
-                candidate.RoleRequirementId,
-                candidate.Title,
-                candidate.Event.Title,
-                candidate.RoleRequirement.RoleName,
-                candidate.StartTime,
-                candidate.EndTime,
-                candidate.Capacity,
-                candidate.Status,
-                candidate.CreatedAt,
-                candidate.UpdatedAt))
             .SingleAsync(cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = shift.Id }, response);
     }
@@ -200,6 +158,28 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
 
         return null;
     }
+
+    private static IQueryable<ShiftResponse> ProjectShifts(IQueryable<Shift> shifts) =>
+        shifts.Select(shift => new
+            {
+                Shift = shift,
+                AssignedCount = shift.Assignments.Count(assignment => assignment.Status == "Confirmed" || assignment.Status == "Completed")
+            })
+            .Select(result => new ShiftResponse(
+                result.Shift.Id,
+                result.Shift.EventId,
+                result.Shift.RoleRequirementId,
+                result.Shift.Title,
+                result.Shift.Event.Title,
+                result.Shift.RoleRequirement.RoleName,
+                result.Shift.StartTime,
+                result.Shift.EndTime,
+                result.Shift.Capacity,
+                result.AssignedCount,
+                result.AssignedCount >= result.Shift.Capacity ? 0 : result.Shift.Capacity - result.AssignedCount,
+                result.Shift.Status,
+                result.Shift.CreatedAt,
+                result.Shift.UpdatedAt));
 
     private static ProblemDetails CreateNotFoundProblem(string resource, Guid id) => new()
     {

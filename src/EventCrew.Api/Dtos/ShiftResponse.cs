@@ -11,6 +11,8 @@ public sealed record ShiftResponse(
     DateTimeOffset StartTime,
     DateTimeOffset EndTime,
     int Capacity,
+    int AssignedCount,
+    int RemainingCapacity,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

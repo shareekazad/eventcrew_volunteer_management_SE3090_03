@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronDown, ChevronRight, ClipboardList, Clock3, LayoutDashboard, Plus, Search, Settings, Users, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronRight, Clock3, Plus, Search, Users, X } from 'lucide-react'
 import { createShift, deleteShift, getAllShifts, updateShift } from '../../api/shiftService'
 import { getAllEvents, type EventRecord } from '../../api/eventService'
 import { getApiErrorMessage } from '../../api/client'
@@ -7,6 +7,7 @@ import DeleteConfirmationDialog from '../../components/DeleteConfirmationDialog'
 import ShiftCard from '../../components/ShiftCard'
 import ShiftModal from '../../components/ShiftModal'
 import ShiftTable from '../../components/ShiftTable'
+import OrganizerSidebar from '../../components/OrganizerSidebar'
 import type { Shift, ShiftFormValues, ShiftWriteRequest } from '../../types/shift'
 
 type Toast = { kind: 'success' | 'error'; message: string }
@@ -144,12 +145,7 @@ export default function ShiftManagementPage() {
 
   return (
     <div className="dashboard-shell">
-      <aside className="sidebar">
-        <a className="brand" href="#shifts" aria-label="EventCrew organizer home"><span className="brand-mark"><CalendarDays size={18} /></span><span>eventcrew<span className="brand-period">.</span></span></a>
-        <div className="workspace-label">ORGANIZER WORKSPACE</div>
-        <nav className="side-nav" aria-label="Organizer navigation"><a href="#overview"><LayoutDashboard size={18} />Overview</a><a href="#events"><CalendarDays size={18} />My events</a><a className="active" href="#shifts" aria-current="page"><Clock3 size={18} />Shift management</a><a href="#volunteers"><Users size={18} />Volunteers</a><a href="#requirements"><ClipboardList size={18} />Requirements</a></nav>
-        <div className="sidebar-bottom"><a href="#settings"><Settings size={18} />Settings</a><div className="organizer-profile"><div className="avatar">JM</div><div><strong>Jordan Miller</strong><span>Event organizer</span></div><ChevronDown size={15} /></div></div>
-      </aside>
+      <OrganizerSidebar activePage="shifts" />
 
       <main className="main-content" id="shifts">
         <header className="topbar"><div className="mobile-brand"><span className="brand-mark"><CalendarDays size={17} /></span>eventcrew<span className="brand-period">.</span></div><div className="topbar-context">Organizer workspace <ChevronRight size={15} /> Shift management</div><button className="topbar-avatar" type="button" aria-label="Organizer profile">JM</button></header>
