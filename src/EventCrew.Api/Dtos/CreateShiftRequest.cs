@@ -6,7 +6,7 @@ namespace EventCrew.Api.Dtos;
 public sealed record CreateShiftRequest : IValidatableObject
 {
     /// <summary>Shift display title.</summary>
-    [Required, StringLength(150)]
+    [Required, StringLength(150), MinLength(1)]
     public string? Title { get; init; }
 
     /// <summary>Identifier of the event that owns this shift.</summary>
@@ -29,6 +29,11 @@ public sealed record CreateShiftRequest : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        if (string.IsNullOrWhiteSpace(Title))
+        {
+            yield return new ValidationResult("Title is required.", [nameof(Title)]);
+        }
+
         if (EventId == Guid.Empty)
         {
             yield return new ValidationResult("EventId is required.", [nameof(EventId)]);

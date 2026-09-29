@@ -5,6 +5,8 @@ namespace EventCrew.Infrastructure.Persistence;
 
 public class EventCrewDbContext(DbContextOptions<EventCrewDbContext> options) : DbContext(options)
 {
+    public DbSet<Event> Events => Set<Event>();
+    public DbSet<RoleRequirement> RoleRequirements => Set<RoleRequirement>();
     public DbSet<Shift> Shifts => Set<Shift>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

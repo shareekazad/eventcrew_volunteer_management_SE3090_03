@@ -5,6 +5,8 @@ export type Shift = {
   eventId: string
   roleRequirementId: string
   title: string
+  eventName: string
+  roleRequirementName: string
   startTime: string
   endTime: string
   capacity: number

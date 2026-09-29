@@ -21,7 +21,19 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
             .AsNoTracking()
             .OrderBy(shift => shift.StartTime)
             .ThenBy(shift => shift.Id)
-            .Select(shift => ToResponse(shift))
+            .Select(shift => new ShiftResponse(
+                shift.Id,
+                shift.EventId,
+                shift.RoleRequirementId,
+                shift.Title,
+                shift.Event.Title,
+                shift.RoleRequirement.RoleName,
+                shift.StartTime,
+                shift.EndTime,
+                shift.Capacity,
+                shift.Status,
+                shift.CreatedAt,
+                shift.UpdatedAt))
             .ToListAsync(cancellationToken);
 
         return Ok(shifts);
@@ -37,7 +49,19 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         var shift = await dbContext.Shifts
             .AsNoTracking()
             .Where(candidate => candidate.Id == id)
-            .Select(candidate => ToResponse(candidate))
+            .Select(shift => new ShiftResponse(
+                shift.Id,
+                shift.EventId,
+                shift.RoleRequirementId,
+                shift.Title,
+                shift.Event.Title,
+                shift.RoleRequirement.RoleName,
+                shift.StartTime,
+                shift.EndTime,
+                shift.Capacity,
+                shift.Status,
+                shift.CreatedAt,
+                shift.UpdatedAt))
             .SingleOrDefaultAsync(cancellationToken);
 
         return shift is null ? NotFound(CreateNotFoundProblem("Shift", id)) : Ok(shift);
@@ -53,10 +77,10 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         CreateShiftRequest request,
         CancellationToken cancellationToken)
     {
-        var missingReference = await FindMissingReference(request.EventId, request.RoleRequirementId, cancellationToken);
-        if (missingReference is not null)
+        var invalidReference = await ValidateReferences(request.EventId, request.RoleRequirementId, cancellationToken);
+        if (invalidReference is not null)
         {
-            return NotFound(missingReference);
+            return invalidReference;
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -76,7 +100,23 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         dbContext.Shifts.Add(shift);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var response = ToResponse(shift);
+        var response = await dbContext.Shifts
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == shift.Id)
+            .Select(candidate => new ShiftResponse(
+                candidate.Id,
+                candidate.EventId,
+                candidate.RoleRequirementId,
+                candidate.Title,
+                candidate.Event.Title,
+                candidate.RoleRequirement.RoleName,
+                candidate.StartTime,
+                candidate.EndTime,
+                candidate.Capacity,
+                candidate.Status,
+                candidate.CreatedAt,
+                candidate.UpdatedAt))
+            .SingleAsync(cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = shift.Id }, response);
     }
 
@@ -97,10 +137,10 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
             return NotFound(CreateNotFoundProblem("Shift", id));
         }
 
-        var missingReference = await FindMissingReference(request.EventId, request.RoleRequirementId, cancellationToken);
-        if (missingReference is not null)
+        var invalidReference = await ValidateReferences(request.EventId, request.RoleRequirementId, cancellationToken);
+        if (invalidReference is not null)
         {
-            return NotFound(missingReference);
+            return invalidReference;
         }
 
         shift.EventId = request.EventId;
@@ -133,19 +173,29 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         return NoContent();
     }
 
-    private async Task<ProblemDetails?> FindMissingReference(
+    private async Task<ActionResult?> ValidateReferences(
         Guid eventId,
         Guid roleRequirementId,
         CancellationToken cancellationToken)
     {
-        if (!await dbContext.Set<Event>().AnyAsync(eventEntity => eventEntity.Id == eventId, cancellationToken))
+        if (!await dbContext.Events.AnyAsync(eventEntity => eventEntity.Id == eventId, cancellationToken))
         {
-            return CreateNotFoundProblem("Event", eventId);
+            return NotFound(CreateNotFoundProblem("Event", eventId));
         }
 
-        if (!await dbContext.Set<RoleRequirement>().AnyAsync(requirement => requirement.Id == roleRequirementId, cancellationToken))
+        var requirement = await dbContext.RoleRequirements
+            .AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == roleRequirementId, cancellationToken);
+        if (requirement is null)
         {
-            return CreateNotFoundProblem("Role requirement", roleRequirementId);
+            return NotFound(CreateNotFoundProblem("Role requirement", roleRequirementId));
+        }
+        if (!requirement.BelongsToEvent(eventId))
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                [nameof(CreateShiftRequest.RoleRequirementId)] = ["The role requirement must belong to the selected event."]
+            }));
         }
 
         return null;
@@ -158,15 +208,4 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         Detail = $"No {resource.ToLowerInvariant()} exists with identifier '{id}'."
     };
 
-    private static ShiftResponse ToResponse(Shift shift) => new(
-        shift.Id,
-        shift.EventId,
-        shift.RoleRequirementId,
-        shift.Title,
-        shift.StartTime,
-        shift.EndTime,
-        shift.Capacity,
-        shift.Status,
-        shift.CreatedAt,
-        shift.UpdatedAt);
 }
