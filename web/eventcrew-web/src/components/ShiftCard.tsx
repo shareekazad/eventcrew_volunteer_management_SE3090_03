@@ -4,7 +4,7 @@ import type { Shift } from '../types/shift'
 
 type ShiftCardProps = {
   shift: Shift
-  eventName: string
+  eventName: (eventId: string) => string
   requirementName: string
   onEdit: (shift: Shift) => void
   onDelete: (shift: Shift) => void
@@ -20,7 +20,7 @@ export default function ShiftCard({ shift, eventName, requirementName, onEdit, o
         <div><p className="eyebrow">{requirementName}</p><h3>{shift.title}</h3></div>
         <ShiftStatusBadge status={shift.status} />
       </div>
-      <p className="card-event"><CalendarDays size={15} aria-hidden="true" />{eventName}</p>
+      <p className="card-event"><CalendarDays size={15} aria-hidden="true" />{eventName(shift.eventId)}</p>
       <div className="card-details">
         <span><CalendarDays size={15} aria-hidden="true" />{start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
         <span><Clock3 size={15} aria-hidden="true" />{start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} – {end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>

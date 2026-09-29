@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 
-type DeleteConfirmationDialogProps = { shiftTitle: string; onCancel: () => void; onConfirm: () => void }
+type DeleteConfirmationDialogProps = { shiftTitle: string; isDeleting: boolean; onCancel: () => void; onConfirm: () => void }
 
-export default function DeleteConfirmationDialog({ shiftTitle, onCancel, onConfirm }: DeleteConfirmationDialogProps) {
+export default function DeleteConfirmationDialog({ shiftTitle, isDeleting, onCancel, onConfirm }: DeleteConfirmationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     cancelRef.current?.focus()
@@ -20,7 +20,7 @@ export default function DeleteConfirmationDialog({ shiftTitle, onCancel, onConfi
         <div className="confirm-icon"><AlertTriangle size={22} aria-hidden="true" /></div>
         <h2 id="delete-title">Delete this shift?</h2>
         <p id="delete-description">“{shiftTitle}” will be removed from this event. This action can’t be undone.</p>
-        <div className="modal-actions"><button ref={cancelRef} className="button button-secondary" type="button" onClick={onCancel}>Cancel</button><button className="button button-danger" type="button" onClick={onConfirm}>Delete Shift</button></div>
+        <div className="modal-actions"><button ref={cancelRef} className="button button-secondary" type="button" onClick={onCancel} disabled={isDeleting}>Cancel</button><button className="button button-danger" type="button" onClick={onConfirm} disabled={isDeleting}>{isDeleting ? 'Deleting…' : 'Delete Shift'}</button></div>
       </section>
     </div>
   )
