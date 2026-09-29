@@ -6,6 +6,8 @@ public sealed record ShiftResponse(
     Guid EventId,
     Guid RoleRequirementId,
     string Title,
+    string EventName,
+    string RoleRequirementName,
     DateTimeOffset StartTime,
     DateTimeOffset EndTime,
     int Capacity,

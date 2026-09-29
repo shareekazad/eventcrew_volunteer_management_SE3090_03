@@ -39,6 +39,36 @@ public class ShiftRequestValidationTests
         Assert.Contains(errors, error => error.MemberNames.Contains(nameof(CreateShiftRequest.EventId)));
     }
 
+    [Fact]
+    public void CreateRequestRejectsMissingRoleRequirementIdentifier()
+    {
+        var request = ValidCreateRequest() with { RoleRequirementId = Guid.Empty };
+
+        var errors = Validate(request);
+
+        Assert.Contains(errors, error => error.MemberNames.Contains(nameof(CreateShiftRequest.RoleRequirementId)));
+    }
+
+    [Fact]
+    public void CreateRequestRejectsBlankTitle()
+    {
+        var request = ValidCreateRequest() with { Title = " " };
+
+        var errors = Validate(request);
+
+        Assert.Contains(errors, error => error.MemberNames.Contains(nameof(CreateShiftRequest.Title)));
+    }
+
+    [Fact]
+    public void RoleRequirementMustBelongToSelectedEvent()
+    {
+        var eventId = Guid.NewGuid();
+        var requirement = new EventCrew.Domain.Entities.RoleRequirement { EventId = eventId };
+
+        Assert.True(requirement.BelongsToEvent(eventId));
+        Assert.False(requirement.BelongsToEvent(Guid.NewGuid()));
+    }
+
     private static CreateShiftRequest ValidCreateRequest() => new()
     {
         Title = "Check-in support",

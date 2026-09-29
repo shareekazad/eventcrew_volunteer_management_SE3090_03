@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
+import { getApiErrorMessage } from '../api/client'
+import { getRoleRequirements, type RoleRequirementRecord } from '../api/roleRequirementService'
+import type { EventRecord } from '../api/eventService'
 import type { Shift, ShiftFormValues } from '../types/shift'
 
 type ShiftModalProps = {
   shift?: Shift | null
   eventId: string
-  eventOptions: { id: string; name: string }[]
-  requirementOptions: { id: string; name: string }[]
+  events: EventRecord[]
+  eventsLoading: boolean
+  eventsError: string | null
+  onRetryEvents: () => void
   onClose: () => void
   isSaving: boolean
   onSave: (values: ShiftFormValues, id?: string) => Promise<void>
@@ -32,12 +37,30 @@ function initialValues(shift: Shift | null | undefined, eventId: string): ShiftF
   }
 }
 
-export default function ShiftModal({ shift, eventId, eventOptions, requirementOptions, isSaving, onClose, onSave }: ShiftModalProps) {
+export default function ShiftModal({ shift, eventId, events, eventsLoading, eventsError, onRetryEvents, isSaving, onClose, onSave }: ShiftModalProps) {
   const [values, setValues] = useState(() => initialValues(shift, eventId))
   const [errors, setErrors] = useState<FormErrors>({})
+  const [requirementResult, setRequirementResult] = useState<{ eventId: string; requirements?: RoleRequirementRecord[]; error?: string } | null>(null)
+  const [requirementRetry, setRequirementRetry] = useState(0)
   const dialogRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const isEditing = Boolean(shift)
+  const currentRequirementResult = requirementResult?.eventId === values.eventId ? requirementResult : null
+  const requirementOptions = currentRequirementResult?.requirements ?? []
+  const isLoadingRequirements = guidPattern.test(values.eventId) && !currentRequirementResult
+
+  useEffect(() => {
+    if (!guidPattern.test(values.eventId)) return
+    let isActive = true
+    getRoleRequirements(values.eventId)
+      .then((requirements) => {
+        if (isActive) setRequirementResult({ eventId: values.eventId, requirements })
+      })
+      .catch((error: unknown) => {
+        if (isActive) setRequirementResult({ eventId: values.eventId, error: getApiErrorMessage(error) })
+      })
+    return () => { isActive = false }
+  }, [requirementRetry, values.eventId])
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -69,8 +92,8 @@ export default function ShiftModal({ shift, eventId, eventOptions, requirementOp
   const validate = () => {
     const next: FormErrors = {}
     if (!values.title.trim()) next.title = 'Enter a title for this shift.'
-    if (!guidPattern.test(values.eventId)) next.eventId = 'Enter a valid event ID.'
-    if (!guidPattern.test(values.roleRequirementId)) next.roleRequirementId = 'Enter a valid role requirement ID.'
+    if (!events.some((event) => event.id === values.eventId)) next.eventId = 'Choose an event.'
+    if (!requirementOptions.some((requirement) => requirement.id === values.roleRequirementId)) next.roleRequirementId = 'Choose a role requirement for this event.'
     if (!values.date) next.date = 'Choose a date for this shift.'
     if (!values.startTime) next.startTime = 'Enter a start time.'
     if (!values.endTime) next.endTime = 'Enter an end time.'
@@ -94,13 +117,16 @@ export default function ShiftModal({ shift, eventId, eventOptions, requirementOp
               <input id="shift-title" ref={titleRef} value={values.title} maxLength={150} aria-invalid={Boolean(errors.title)} aria-describedby={errors.title ? 'title-error' : undefined} onChange={(event) => update('title', event.target.value)} placeholder="e.g. Guest check-in" />
               {errors.title && <span className="field-error" id="title-error">{errors.title}</span>}
             </label>
-            <label className="form-field" htmlFor="shift-event">Event ID
-              {eventOptions.length ? <select id="shift-event" value={values.eventId} aria-invalid={Boolean(errors.eventId)} aria-describedby={errors.eventId ? 'event-error' : undefined} onChange={(event) => update('eventId', event.target.value)}><option value="">Select event</option>{eventOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select> : <input id="shift-event" value={values.eventId} aria-invalid={Boolean(errors.eventId)} aria-describedby={errors.eventId ? 'event-error' : undefined} onChange={(event) => update('eventId', event.target.value)} placeholder="Event UUID" />}
+            <label className="form-field" htmlFor="shift-event">Event (required)
+              <select id="shift-event" value={values.eventId} disabled={eventsLoading || !events.length} aria-invalid={Boolean(errors.eventId)} aria-describedby={errors.eventId ? 'event-error' : eventsError ? 'events-error' : undefined} onChange={(event) => { update('eventId', event.target.value); update('roleRequirementId', '') }}><option value="">{eventsLoading ? 'Loading events…' : 'Select event'}</option>{events.map((option) => <option key={option.id} value={option.id}>{option.title}</option>)}</select>
               {errors.eventId && <span className="field-error" id="event-error">{errors.eventId}</span>}
+              {eventsError && <span className="field-error" id="events-error">{eventsError} <button className="inline-retry" type="button" onClick={onRetryEvents}>Retry</button></span>}
             </label>
-            <label className="form-field" htmlFor="shift-requirement">Role requirement ID
-              {requirementOptions.length ? <select id="shift-requirement" value={values.roleRequirementId} aria-invalid={Boolean(errors.roleRequirementId)} aria-describedby={errors.roleRequirementId ? 'requirement-error' : undefined} onChange={(event) => update('roleRequirementId', event.target.value)}><option value="">Select requirement</option>{requirementOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select> : <input id="shift-requirement" value={values.roleRequirementId} aria-invalid={Boolean(errors.roleRequirementId)} aria-describedby={errors.roleRequirementId ? 'requirement-error' : undefined} onChange={(event) => update('roleRequirementId', event.target.value)} placeholder="Role requirement UUID" />}
+            <label className="form-field" htmlFor="shift-requirement">Requirement (required)
+              <select id="shift-requirement" value={values.roleRequirementId} disabled={!values.eventId || isLoadingRequirements || Boolean(currentRequirementResult?.error) || !requirementOptions.length} aria-invalid={Boolean(errors.roleRequirementId)} aria-describedby={errors.roleRequirementId ? 'requirement-error' : currentRequirementResult?.error ? 'requirements-error' : undefined} onChange={(event) => update('roleRequirementId', event.target.value)}><option value="">{isLoadingRequirements ? 'Loading requirements…' : 'Select requirement'}</option>{requirementOptions.map((option) => <option key={option.id} value={option.id}>{option.roleName} · {option.requiredHeadcount} required</option>)}</select>
               {errors.roleRequirementId && <span className="field-error" id="requirement-error">{errors.roleRequirementId}</span>}
+              {currentRequirementResult?.error && <span className="field-error" id="requirements-error">{currentRequirementResult.error} <button className="inline-retry" type="button" onClick={() => { setRequirementResult(null); setRequirementRetry((current) => current + 1) }}>Retry</button></span>}
+              {currentRequirementResult && !currentRequirementResult.error && !requirementOptions.length && <span className="field-hint">This event has no role requirements yet.</span>}
             </label>
             <label className="form-field" htmlFor="shift-date">Date
               <input id="shift-date" type="date" value={values.date} aria-invalid={Boolean(errors.date)} aria-describedby={errors.date ? 'date-error' : undefined} onChange={(event) => update('date', event.target.value)} />

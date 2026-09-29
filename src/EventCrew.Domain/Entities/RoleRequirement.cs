@@ -43,4 +43,6 @@ public class RoleRequirement
     [ForeignKey(nameof(EventId))]
     public Event Event { get; set; } = null!;
     public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
+
+    public bool BelongsToEvent(Guid eventId) => EventId == eventId;
 }

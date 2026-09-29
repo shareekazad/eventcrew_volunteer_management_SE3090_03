@@ -47,5 +47,16 @@ public class ShiftPersistenceModelTests
                 Assert.Equal(typeof(RoleRequirement), foreignKey.PrincipalEntityType.ClrType);
                 Assert.Equal(DeleteBehavior.Cascade, foreignKey.DeleteBehavior);
             });
+
+        var requirement = context.Model.FindEntityType(typeof(RoleRequirement));
+        Assert.NotNull(requirement);
+        Assert.Equal("role_requirements", requirement.GetTableName());
+        var requirementTable = StoreObjectIdentifier.Table("role_requirements", null);
+        Assert.Contains(requirement.GetProperties(), property => property.GetColumnName(requirementTable) == "event_id");
+        Assert.Contains(requirement.GetProperties(), property => property.GetColumnName(requirementTable) == "role_name");
+        Assert.Contains(requirement.GetForeignKeys(), foreignKey =>
+            foreignKey.Properties.Single().GetColumnName(requirementTable) == "event_id" &&
+            foreignKey.PrincipalEntityType.ClrType == typeof(Event) &&
+            foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
     }
 }

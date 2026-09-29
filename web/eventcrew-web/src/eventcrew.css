@@ -140,6 +140,8 @@ h1 { margin-bottom: 6px; font-family: Manrope, sans-serif; font-size: 29px; line
 .form-field input[aria-invalid="true"], .form-field select[aria-invalid="true"] { border-color: #d66b64; }
 .form-wide { grid-column: 1 / -1; }
 .field-error { color: #b6423d; font-size: 10px; font-weight: 500; }
+.field-hint { color: #84918d; font-size: 10px; font-weight: 400; }
+.inline-retry { padding: 0; border: 0; color: #246fb2; background: transparent; font-size: inherit; font-weight: 700; text-decoration: underline; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; padding-top: 15px; border-top: 1px solid #edf0ee; }
 .confirm-panel { position: relative; width: min(410px, 100%); padding: 26px; text-align: center; }
 .confirm-close { position: absolute; top: 11px; right: 11px; }

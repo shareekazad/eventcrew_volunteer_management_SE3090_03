@@ -14,6 +14,11 @@ public class ShiftPrincipalConfigurations : IEntityTypeConfiguration<Event>, IEn
             .HasColumnName("id")
             .HasColumnType("uuid")
             .HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(eventEntity => eventEntity.Title)
+            .HasColumnName("title")
+            .HasColumnType("character varying(200)")
+            .HasMaxLength(200)
+            .IsRequired();
     }
 
     public void Configure(EntityTypeBuilder<RoleRequirement> builder)
@@ -24,5 +29,22 @@ public class ShiftPrincipalConfigurations : IEntityTypeConfiguration<Event>, IEn
             .HasColumnName("id")
             .HasColumnType("uuid")
             .HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(requirement => requirement.EventId)
+            .HasColumnName("event_id")
+            .HasColumnType("uuid")
+            .IsRequired();
+        builder.Property(requirement => requirement.RoleName)
+            .HasColumnName("role_name")
+            .HasColumnType("character varying(100)")
+            .HasMaxLength(100)
+            .IsRequired();
+        builder.Property(requirement => requirement.RequiredHeadcount)
+            .HasColumnName("required_headcount")
+            .HasColumnType("integer")
+            .IsRequired();
+        builder.HasOne(requirement => requirement.Event)
+            .WithMany(eventEntity => eventEntity.RoleRequirements)
+            .HasForeignKey(requirement => requirement.EventId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
