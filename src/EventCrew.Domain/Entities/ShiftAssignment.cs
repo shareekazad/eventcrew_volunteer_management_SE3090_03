@@ -12,4 +12,5 @@ public class ShiftAssignment
 
     public Shift Shift { get; set; } = null!;
     public VolunteerProfile Volunteer { get; set; } = null!;
+    public AttendanceRecord? AttendanceRecord { get; set; }
 }
