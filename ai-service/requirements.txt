@@ -4,6 +4,7 @@ anyio==4.15.1
 certifi==2026.7.22
 charset-normalizer==3.5.2
 click==8.5.0
+colorama==0.4.6
 distro==1.9.0
 fastapi==0.141.1
 h11==0.16.0
@@ -13,6 +14,7 @@ httptools==0.8.0
 httpx==0.28.1
 httpx2==2.13.1
 idna==3.20
+iniconfig==2.3.0
 jsonpatch==1.33
 jsonpointer==3.1.1
 langchain-core==1.6.6
@@ -25,8 +27,12 @@ langsmith==0.14.1
 orjson==3.12.0
 ormsgpack==1.12.2
 packaging==26.3
+pluggy==1.6.0
 pydantic==2.13.5
 pydantic_core==2.46.5
+Pygments==2.21.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
 python-dotenv==1.2.3
 PyYAML==6.0.3
 requests==2.34.2
