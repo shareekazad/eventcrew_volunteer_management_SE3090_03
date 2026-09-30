@@ -16,4 +16,5 @@ public class Shift
     public Event Event { get; set; } = null!;
     public RoleRequirement RoleRequirement { get; set; } = null!;
     public ICollection<ShiftAssignment> Assignments { get; set; } = new List<ShiftAssignment>();
+    public ICollection<QrCodeToken> QrCodeTokens { get; set; } = new List<QrCodeToken>();
 }

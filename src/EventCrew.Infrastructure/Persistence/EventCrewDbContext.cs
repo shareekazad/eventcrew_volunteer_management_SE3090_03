@@ -12,6 +12,8 @@ public class EventCrewDbContext(DbContextOptions<EventCrewDbContext> options) : 
     public DbSet<VolunteerProfile> VolunteerProfiles => Set<VolunteerProfile>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
+    public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
+    public DbSet<QrCodeToken> QrCodeTokens => Set<QrCodeToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
