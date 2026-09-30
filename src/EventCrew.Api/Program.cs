@@ -38,7 +38,20 @@ builder.Services
 builder.Services.AddAuthorization();
 
 // ── Application Services ─────────────────────────────────────────────────────
+// Student 1: Events and Venues
+builder.Services.AddScoped<IVenueService, VenueService>();
+builder.Services.AddScoped<IEventService, EventService>();
+
+// Student 2: Volunteer Profiles and Applications
 builder.Services.AddScoped<IVolunteerService, VolunteerService>();
+
+// AI service (Python) — typed HttpClient
+builder.Services.AddHttpClient<IAgentService, AgentService>(client =>
+{
+    client.BaseAddress = new Uri(
+        builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 
 // ── MVC ─────────────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
@@ -52,12 +65,10 @@ builder.Services.AddSwaggerGen(c =>
         Title   = "EventCrew API",
         Version = "v1",
         Description =
-            "Volunteer management REST API. " +
-            "Student 2 module: Volunteer Profiles & Applications.",
+            "EventCrew Volunteer & Event Management REST API. " +
+            "Includes Event Planning, Venues, AI Agent, Volunteer Profiles & Applications.",
     });
 
-    // Allow Swagger UI to send JWT tokens in the Authorize dialog.
-    // Security definition uses the Swashbuckle 10 / OpenAPI v2 compatible API.
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name         = "Authorization",
@@ -68,7 +79,6 @@ builder.Services.AddSwaggerGen(c =>
         Description  = "Enter your JWT token (without the 'Bearer' prefix).",
     });
 
-    // Apply Bearer security globally to all operations via a document-level transformer.
     c.AddSecurityRequirement(doc =>
     {
         var requirement = new OpenApiSecurityRequirement();

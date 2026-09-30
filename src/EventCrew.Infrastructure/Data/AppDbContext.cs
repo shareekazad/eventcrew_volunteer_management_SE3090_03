@@ -6,49 +6,50 @@ namespace EventCrew.Infrastructure.Data;
 /// <summary>
 /// EF Core database context for the EventCrew application.
 /// Targets PostgreSQL via Npgsql.
+/// Combines models from Student 1 (Events & Venues), Student 2 (Volunteers & Applications), and shared infrastructure.
 /// </summary>
 public class AppDbContext : DbContext
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options)
+    {
+    }
 
-    // ── Student 2: Volunteer Profiles & Applications ──────────────────────────
+    // ---- Student 1 (Event & Venue) ----
+    public DbSet<Venue> Venues => Set<Venue>();
+    public DbSet<Event> Events => Set<Event>();
+    public DbSet<RoleRequirement> RoleRequirements => Set<RoleRequirement>();
+
+    // ---- Student 2: Volunteer Profiles & Applications ----
     public DbSet<VolunteerProfile> VolunteerProfiles => Set<VolunteerProfile>();
     public DbSet<Skill> Skills => Set<Skill>();
     public DbSet<VolunteerSkill> VolunteerSkills => Set<VolunteerSkill>();
     public DbSet<Application> Applications => Set<Application>();
 
-    // ── Stub tables (owned by other students, included for FK integrity) ──────
+    // ---- Shared AI workflow state ----
+    public DbSet<AgentWorkflowRun> AgentWorkflowRuns => Set<AgentWorkflowRun>();
+    public DbSet<AgentToolLog> AgentToolLogs => Set<AgentToolLog>();
+
+    // ---- Shared identity ----
     public DbSet<User> Users => Set<User>();
-    public DbSet<Event> Events => Set<Event>();
-    public DbSet<RoleRequirement> RoleRequirements => Set<RoleRequirement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // ── Stub entity table mappings ────────────────────────────────────────
-        modelBuilder.Entity<User>(e =>
-        {
-            e.ToTable("users");
-            e.HasKey(u => u.Id);
-            e.Property(u => u.Id).HasColumnName("id");
-        });
+        // ── Student 1: Enums & Mappings ───────────────────────────────────────
+        // Store enums as their string names in the DB (matches DDL: 'Draft', 'Beginner', etc.)
+        modelBuilder
+            .Entity<Event>()
+            .Property(e => e.Status)
+            .HasConversion<string>();
 
-        modelBuilder.Entity<Event>(e =>
-        {
-            e.ToTable("events");
-            e.HasKey(ev => ev.Id);
-            e.Property(ev => ev.Id).HasColumnName("id");
-        });
+        modelBuilder
+            .Entity<RoleRequirement>()
+            .Property(r => r.MinExperienceLevel)
+            .HasConversion<string>();
 
-        modelBuilder.Entity<RoleRequirement>(e =>
-        {
-            e.ToTable("role_requirements");
-            e.HasKey(r => r.Id);
-            e.Property(r => r.Id).HasColumnName("id");
-        });
-
-        // ── Skill ─────────────────────────────────────────────────────────────
+        // ── Student 2: Skill ──────────────────────────────────────────────────
         modelBuilder.Entity<Skill>(e =>
         {
             e.ToTable("skills");
@@ -62,7 +63,7 @@ public class AppDbContext : DbContext
             e.HasIndex(s => s.Name).IsUnique();
         });
 
-        // ── VolunteerProfile ──────────────────────────────────────────────────
+        // ── Student 2: VolunteerProfile ───────────────────────────────────────
         modelBuilder.Entity<VolunteerProfile>(e =>
         {
             e.ToTable("volunteer_profiles");
@@ -85,12 +86,12 @@ public class AppDbContext : DbContext
 
             // FK: VolunteerProfile → User
             e.HasOne(vp => vp.User)
-                .WithMany()
-                .HasForeignKey(vp => vp.UserId)
+                .WithOne(u => u.VolunteerProfile)
+                .HasForeignKey<VolunteerProfile>(vp => vp.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // ── VolunteerSkill (join entity) ──────────────────────────────────────
+        // ── Student 2: VolunteerSkill (join entity) ───────────────────────────
         modelBuilder.Entity<VolunteerSkill>(e =>
         {
             e.ToTable("volunteer_skills");
@@ -118,7 +119,7 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
-        // ── Application ───────────────────────────────────────────────────────
+        // ── Student 2: Application ────────────────────────────────────────────
         modelBuilder.Entity<Application>(e =>
         {
             e.ToTable("applications");
@@ -147,7 +148,7 @@ public class AppDbContext : DbContext
 
             // FK: Application → Event
             e.HasOne(a => a.Event)
-                .WithMany()
+                .WithMany(ev => ev.Applications)
                 .HasForeignKey(a => a.EventId)
                 .OnDelete(DeleteBehavior.Cascade);
 
@@ -159,7 +160,7 @@ public class AppDbContext : DbContext
 
             // FK: Application → RoleRequirement (optional)
             e.HasOne(a => a.RoleRequirement)
-                .WithMany()
+                .WithMany(r => r.Applications)
                 .HasForeignKey(a => a.RoleRequirementId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
