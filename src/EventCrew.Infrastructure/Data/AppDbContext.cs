@@ -19,6 +19,10 @@ public class AppDbContext : DbContext
     public DbSet<Event> Events => Set<Event>();
     public DbSet<RoleRequirement> RoleRequirements => Set<RoleRequirement>();
 
+        // ---- Shared AI workflow state ----
+    public DbSet<AgentWorkflowRun> AgentWorkflowRuns => Set<AgentWorkflowRun>();
+    public DbSet<AgentToolLog> AgentToolLogs => Set<AgentToolLog>();
+
     // ---- Shared identity ----
     public DbSet<User> Users => Set<User>();
 
