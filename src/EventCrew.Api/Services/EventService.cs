@@ -23,8 +23,8 @@ public class EventService : IEventService
         [EventStatus.Published] = new[] { EventStatus.StaffingInProgress, EventStatus.Cancelled },
         [EventStatus.StaffingInProgress] = new[] { EventStatus.FullyStaffed, EventStatus.Published, EventStatus.Cancelled },
         [EventStatus.FullyStaffed] = new[] { EventStatus.Completed, EventStatus.StaffingInProgress, EventStatus.Cancelled },
-        [EventStatus.Completed] = Array.Empty<EventStatus>(),   // terminal
-        [EventStatus.Cancelled] = Array.Empty<EventStatus>()    // terminal
+        [EventStatus.Completed] = Array.Empty<EventStatus>(),
+        [EventStatus.Cancelled] = Array.Empty<EventStatus>()
     };
 
     public EventService(AppDbContext db)
@@ -63,17 +63,14 @@ public class EventService : IEventService
 
     public async Task<EventResponseDto> CreateAsync(CreateEventDto dto, CancellationToken cancellationToken = default)
     {
-        // Business rule: dates must be ordered
         if (dto.StartDate >= dto.EndDate)
             throw new InvalidOperationException("Start date must be before end date.");
 
-        // Business rule: organizer must exist
         var organizerExists = await _db.Users
             .AnyAsync(u => u.Id == dto.OrganizerId, cancellationToken);
         if (!organizerExists)
             throw new InvalidOperationException("Organizer does not exist.");
 
-        // Business rule: venue must exist if provided
         if (dto.VenueId.HasValue)
         {
             var venueExists = await _db.Venues
@@ -92,18 +89,23 @@ public class EventService : IEventService
             Category = dto.Category.Trim(),
             StartDate = dto.StartDate,
             EndDate = dto.EndDate,
-            Status = EventStatus.Draft,   // server-controlled — always Draft on create
+            Status = EventStatus.Draft,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        // Nested role requirements (validated in Part 2's helper)
+        _db.Events.Add(ev);
+
+        // Add nested role requirements via the navigation collection only.
+        // EF Core cascade-inserts them on SaveChanges. Adding to both the
+        // navigation and the DbSet causes duplicate tracking.
         foreach (var roleInput in dto.RoleRequirements)
         {
-            ev.RoleRequirements.Add(BuildRoleRequirement(roleInput));
+            var role = BuildRoleRequirement(roleInput);
+            role.EventId = ev.Id;
+            ev.RoleRequirements.Add(role);
         }
 
-        _db.Events.Add(ev);
         await _db.SaveChangesAsync(cancellationToken);
 
         return MapToDto(ev);
@@ -191,29 +193,25 @@ public class EventService : IEventService
     }
 
     // ============================================================
-    // PLACEHOLDERS — will be filled in Part 2
-    // ============================================================
-
-        // ============================================================
     // NESTED ROLE REQUIREMENTS
     // ============================================================
 
     public async Task<RoleRequirementDto?> AddRoleAsync(Guid eventId, RoleRequirementInputDto dto, CancellationToken cancellationToken = default)
     {
         var ev = await _db.Events
-            .Include(e => e.RoleRequirements)
             .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
 
         if (ev is null)
             return null;
 
-        // Business rule: cannot modify roles on a completed/cancelled event
         if (ev.Status is EventStatus.Completed or EventStatus.Cancelled)
             throw new InvalidOperationException(
                 $"Cannot add role requirements to an event in '{ev.Status}' status.");
 
         var role = BuildRoleRequirement(dto);
-        ev.RoleRequirements.Add(role);
+        role.EventId = eventId;
+
+        _db.RoleRequirements.Add(role);
         ev.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(cancellationToken);
@@ -224,7 +222,6 @@ public class EventService : IEventService
     public async Task<bool> RemoveRoleAsync(Guid eventId, Guid roleId, CancellationToken cancellationToken = default)
     {
         var ev = await _db.Events
-            .Include(e => e.RoleRequirements)
             .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
 
         if (ev is null)
@@ -234,11 +231,13 @@ public class EventService : IEventService
             throw new InvalidOperationException(
                 $"Cannot remove role requirements from an event in '{ev.Status}' status.");
 
-        var role = ev.RoleRequirements.FirstOrDefault(r => r.Id == roleId);
+        var role = await _db.RoleRequirements
+            .FirstOrDefaultAsync(r => r.Id == roleId && r.EventId == eventId, cancellationToken);
+
         if (role is null)
             return false;
 
-        ev.RoleRequirements.Remove(role);
+        _db.RoleRequirements.Remove(role);
         ev.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(cancellationToken);
