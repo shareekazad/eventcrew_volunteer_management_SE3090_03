@@ -1,0 +1,1 @@
+# EventCrew AI service package

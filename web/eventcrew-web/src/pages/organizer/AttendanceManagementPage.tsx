@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { CalendarDays, ChevronDown, ChevronRight, ClipboardCheck, RefreshCw } from 'lucide-react'
 import { generateShiftQrToken, getShiftAttendance } from '../../api/attendanceService'
@@ -35,6 +35,7 @@ export default function AttendanceManagementPage() {
   const [shiftsError, setShiftsError] = useState<string | null>(null)
   const [attendanceError, setAttendanceError] = useState<string | null>(null)
   const [qrError, setQrError] = useState<string | null>(null)
+  const attendanceRequestId = useRef(0)
   const eventShifts = useMemo(() => shifts.filter((shift) => shift.eventId === eventId), [shifts, eventId])
   const selectedShift = eventShifts.find((shift) => shift.id === shiftId)
   const selectedEvent = events.find((event) => event.id === eventId)
@@ -50,34 +51,24 @@ export default function AttendanceManagementPage() {
     return () => { active = false }
   }, [])
 
-  useEffect(() => {
-    setShiftId('')
-    setAttendance([])
-    setAttendanceError(null)
-    setQrToken(null)
-    setQrError(null)
-  }, [eventId])
-
-  useEffect(() => {
-    if (!shiftId) return
-    let active = true
+  const loadAttendance = async (selectedShiftId: string) => {
+    const requestId = ++attendanceRequestId.current
     setAttendanceLoading(true)
     setAttendanceError(null)
     setAttendance([])
-    getShiftAttendance(shiftId)
-      .then((data) => { if (active) setAttendance(data) })
-      .catch((error: unknown) => { if (active) setAttendanceError(getApiErrorMessage(error)) })
-      .finally(() => { if (active) setAttendanceLoading(false) })
-    return () => { active = false }
-  }, [shiftId])
+    try {
+      const data = await getShiftAttendance(selectedShiftId)
+      if (requestId === attendanceRequestId.current) setAttendance(data)
+    } catch (error) {
+      if (requestId === attendanceRequestId.current) setAttendanceError(getApiErrorMessage(error))
+    } finally {
+      if (requestId === attendanceRequestId.current) setAttendanceLoading(false)
+    }
+  }
 
   const refreshAttendance = async () => {
     if (!shiftId) return
-    setAttendanceLoading(true)
-    setAttendanceError(null)
-    try { setAttendance(await getShiftAttendance(shiftId)) }
-    catch (error) { setAttendanceError(getApiErrorMessage(error)) }
-    finally { setAttendanceLoading(false) }
+    await loadAttendance(shiftId)
   }
 
   const createQr = async () => {
@@ -102,10 +93,10 @@ export default function AttendanceManagementPage() {
 
         <section className="attendance-selector" aria-label="Event and shift selection">
           <label className="attendance-field" htmlFor="attendance-event">Event
-            <span className="attendance-select-wrap"><select id="attendance-event" value={eventId} disabled={eventsLoading || !!eventsError} onChange={(event) => setEventId(event.target.value)}><option value="">{eventsLoading ? 'Loading events…' : 'Select an event'}</option>{events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
+            <span className="attendance-select-wrap"><select id="attendance-event" value={eventId} disabled={eventsLoading || !!eventsError} onChange={(event) => { attendanceRequestId.current += 1; setEventId(event.target.value); setShiftId(''); setAttendance([]); setAttendanceLoading(false); setAttendanceError(null); setQrToken(null); setQrError(null) }}><option value="">{eventsLoading ? 'Loading events…' : 'Select an event'}</option>{events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
           </label>
           <label className="attendance-field" htmlFor="attendance-shift">Shift
-            <span className="attendance-select-wrap"><select id="attendance-shift" value={shiftId} disabled={!eventId || shiftsLoading || !eventShifts.length} onChange={(event) => { setShiftId(event.target.value); setAttendance([]); setQrToken(null); setAttendanceError(null); setQrError(null) }}><option value="">{shiftsLoading ? 'Loading shifts…' : !eventId ? 'Select an event first' : eventShifts.length ? 'Select a shift' : 'No shifts for this event'}</option>{eventShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
+            <span className="attendance-select-wrap"><select id="attendance-shift" value={shiftId} disabled={!eventId || shiftsLoading || !eventShifts.length} onChange={(event) => { const nextShiftId = event.target.value; setShiftId(nextShiftId); setQrToken(null); setAttendanceError(null); setQrError(null); if (nextShiftId) void loadAttendance(nextShiftId); else { attendanceRequestId.current += 1; setAttendance([]); setAttendanceLoading(false) } }}><option value="">{shiftsLoading ? 'Loading shifts…' : !eventId ? 'Select an event first' : eventShifts.length ? 'Select a shift' : 'No shifts for this event'}</option>{eventShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
           </label>
         </section>
 

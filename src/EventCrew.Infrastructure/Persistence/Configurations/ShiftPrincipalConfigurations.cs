@@ -19,6 +19,7 @@ public class ShiftPrincipalConfigurations : IEntityTypeConfiguration<Event>, IEn
             .HasColumnType("character varying(200)")
             .HasMaxLength(200)
             .IsRequired();
+        builder.Property(eventEntity => eventEntity.Status).HasConversion<string>();
     }
 
     public void Configure(EntityTypeBuilder<RoleRequirement> builder)
@@ -42,6 +43,7 @@ public class ShiftPrincipalConfigurations : IEntityTypeConfiguration<Event>, IEn
             .HasColumnName("required_headcount")
             .HasColumnType("integer")
             .IsRequired();
+        builder.Property(requirement => requirement.MinExperienceLevel).HasConversion<string>();
         builder.HasOne(requirement => requirement.Event)
             .WithMany(eventEntity => eventEntity.RoleRequirements)
             .HasForeignKey(requirement => requirement.EventId)

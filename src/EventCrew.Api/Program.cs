@@ -1,4 +1,6 @@
 using System.Data.Common;
+using EventCrew.Api.Services;
+using EventCrew.Infrastructure.Data;
 using EventCrew.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,18 +13,25 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<EventCrewDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
-
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddScoped<IVenueService, VenueService>();
+builder.Services.AddScoped<IEventService, EventService>();
+builder.Services.AddHttpClient<IAgentService, AgentService>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 
 var app = builder.Build();
 app.UseExceptionHandler();
 
-// Configure the HTTP request pipeline.
+// ---- Middleware pipeline ----
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -30,6 +39,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthorization();
 app.MapControllers();
 
 app.MapGet("/health/database", async (EventCrewDbContext dbContext, CancellationToken cancellationToken) =>
@@ -55,14 +65,13 @@ var summaries = new[]
 
 app.MapGet("/weatherforecast", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
+    var forecast = Enumerable.Range(1, 5).Select(index =>
+        new WeatherForecast(
             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
             Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
+            summaries[Random.Shared.Next(summaries.Length)]))
         .ToArray();
+
     return forecast;
 })
 .WithName("GetWeatherForecast")
