@@ -10,7 +10,9 @@ import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from app.agents.planning_agent import PlanningAgent, PlanResult
+from app.agents.planning_agent import PlanResult
+from app.graphs.planning_graph import run_planning_graph
+from app.tools.http_client import BackendError
 
 
 # ---------------------------------------------------------------------------
@@ -72,20 +74,21 @@ def root() -> ServiceInfoResponse:
 @app.post("/agent/plan", response_model=PlanResult, tags=["agent"])
 async def plan_staffing(request: PlanRequest) -> PlanResult:
     """
-    Run the PlanningAgent against a given event and return a structured staffing plan.
+    Run the LangGraph-orchestrated planning workflow against a given event.
 
-    The agent calls only allow-listed tools (get_event, get_venue,
+    The workflow calls only allow-listed tools (get_event, get_venue,
     calculate_staffing_ratio) and produces an auditable plan with a tool-call log.
     """
     logger.info("Received plan request for event_id=%s", request.event_id)
 
-    agent = PlanningAgent()
-
     try:
-        result = await agent.plan(request.event_id)
+        result = await run_planning_graph(request.event_id)
     except ValueError as e:
-        logger.warning("Planning failed for event_id=%s: %s", request.event_id, e)
+        logger.warning("Planning failed (validation) for event_id=%s: %s", request.event_id, e)
         raise HTTPException(status_code=400, detail=str(e))
+    except BackendError as e:
+        logger.error("Planning failed (backend) for event_id=%s: %s", request.event_id, e)
+        raise HTTPException(status_code=503, detail=str(e))
 
     logger.info(
         "Plan complete: %d steps, %d tool calls, next_agent=%s",
