@@ -42,4 +42,7 @@ public class RoleRequirement
     // Navigation
     [ForeignKey(nameof(EventId))]
     public Event Event { get; set; } = null!;
+
+    // Navigation property for Student 2: Volunteer Applications
+    public ICollection<Application> Applications { get; set; } = new List<Application>();
 }

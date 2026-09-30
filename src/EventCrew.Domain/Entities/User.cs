@@ -5,9 +5,7 @@ namespace EventCrew.Domain.Entities;
 
 /// <summary>
 /// ⚠️ SHARED ENTITY — owned by the team (shared identity layer).
-/// This is a MINIMAL STUB created by Student 1 only to unblock the Event entity build.
-/// The owner should extend this with: password_hash, phone_number, is_active,
-/// created_at, updated_at, and proper role-based authorization. DO NOT modify without coordinating.
+/// Contains core identity fields and reverse navigation to organized events and volunteer profiles.
 /// </summary>
 [Table("users")]
 public class User
@@ -31,6 +29,9 @@ public class User
     [Column("role")]
     public string Role { get; set; } = "Volunteer";
 
-    // Reverse navigation
+    // Reverse navigation - Student 1: Organized events
     public ICollection<Event> OrganizedEvents { get; set; } = new List<Event>();
+
+    // Reverse navigation - Student 2: Volunteer profile
+    public VolunteerProfile? VolunteerProfile { get; set; }
 }

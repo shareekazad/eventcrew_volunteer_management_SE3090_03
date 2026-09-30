@@ -58,4 +58,7 @@ public class Event
     public Venue? Venue { get; set; }
 
     public ICollection<RoleRequirement> RoleRequirements { get; set; } = new List<RoleRequirement>();
+
+    // Navigation property for Student 2: Volunteer Applications
+    public ICollection<Application> Applications { get; set; } = new List<Application>();
 }

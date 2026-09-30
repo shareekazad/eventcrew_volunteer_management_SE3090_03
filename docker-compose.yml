@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: eventcrew_dev_password
       POSTGRES_DB: eventcrew_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - eventcrew_pgdata:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d
