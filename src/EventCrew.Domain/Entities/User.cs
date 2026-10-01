@@ -34,6 +34,11 @@ public class User
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
 
+    [Required]
+    [MaxLength(255)]
+    [Column("password_hash")]
+    public string PasswordHash { get; set; } = string.Empty;
+
     // Reverse navigation
     public ICollection<Event> OrganizedEvents { get; set; } = new List<Event>();
 }
