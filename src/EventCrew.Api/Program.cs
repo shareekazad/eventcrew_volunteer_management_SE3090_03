@@ -6,6 +6,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 // ---- Services ----
 builder.Services.AddControllers();
+
+// CORS — allow Flutter web app (localhost, any port) + deployed frontend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontends", policy =>
+    {
+        policy
+            .SetIsOriginAllowed(_ => true)      // allow localhost:anyport during dev
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -35,6 +48,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+
+app.UseCors("AllowFrontends");
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
