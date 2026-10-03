@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from app.agents.planning_agent import PlanResult
 from app.graphs.planning_graph import run_planning_graph
 from app.tools.http_client import BackendError
+from app.api.matching_router import matching_router
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +31,9 @@ app = FastAPI(
     description="Internal AI service for the EventCrew volunteer management platform.",
     version="0.1.0",
 )
+
+# Register Student 2 Volunteer Matching Agent router
+app.include_router(matching_router)
 
 
 # ---------------------------------------------------------------------------
