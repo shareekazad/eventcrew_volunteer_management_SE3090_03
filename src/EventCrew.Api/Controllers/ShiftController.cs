@@ -1,12 +1,14 @@
 using EventCrew.Api.Dtos;
 using EventCrew.Domain.Entities;
 using EventCrew.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventCrew.Api.Controllers;
 
 [ApiController]
+[Authorize(Roles = AuthorizationRoles.All)]
 [Route("api/shifts")]
 [Produces("application/json")]
 public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBase
@@ -17,7 +19,15 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<IReadOnlyList<ShiftResponse>>> GetAll(CancellationToken cancellationToken)
     {
-        var shifts = await ProjectShifts(dbContext.Shifts.AsNoTracking())
+        var shiftQuery = dbContext.Shifts.AsNoTracking();
+        if (ResourceOwnership.IsOrganizer(User))
+        {
+            var organizerId = ResourceOwnership.GetUserId(User);
+            if (organizerId is null) return Ok(Array.Empty<ShiftResponse>());
+            shiftQuery = shiftQuery.Where(shift => shift.Event.OrganizerId == organizerId.Value);
+        }
+
+        var shifts = await ProjectShifts(shiftQuery)
             .OrderBy(shift => shift.StartTime)
             .ThenBy(shift => shift.Id)
             .ToListAsync(cancellationToken);
@@ -32,14 +42,21 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ShiftResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var shift = await ProjectShifts(dbContext.Shifts.AsNoTracking())
-            .Where(candidate => candidate.Id == id)
+        var shiftQuery = dbContext.Shifts.AsNoTracking().Where(candidate => candidate.Id == id);
+        if (ResourceOwnership.IsOrganizer(User))
+        {
+            var organizerId = ResourceOwnership.GetUserId(User);
+            shiftQuery = shiftQuery.Where(candidate => candidate.Event.OrganizerId == organizerId);
+        }
+
+        var shift = await ProjectShifts(shiftQuery)
             .SingleOrDefaultAsync(cancellationToken);
 
         return shift is null ? NotFound(CreateNotFoundProblem("Shift", id)) : Ok(shift);
     }
 
     /// <summary>Creates a shift.</summary>
+    [Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
     [HttpPost]
     [ProducesResponseType(typeof(ShiftResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -79,6 +96,7 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
     }
 
     /// <summary>Updates all editable fields of a shift.</summary>
+    [Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
     [HttpPut("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -89,8 +107,13 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         UpdateShiftRequest request,
         CancellationToken cancellationToken)
     {
-        var shift = await dbContext.Shifts.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        var shift = await dbContext.Shifts.Include(candidate => candidate.Event)
+            .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
         if (shift is null)
+        {
+            return NotFound(CreateNotFoundProblem("Shift", id));
+        }
+        if (!ResourceOwnership.CanManageEvent(User, shift.Event.OrganizerId))
         {
             return NotFound(CreateNotFoundProblem("Shift", id));
         }
@@ -114,14 +137,20 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
     }
 
     /// <summary>Deletes a shift.</summary>
+    [Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var shift = await dbContext.Shifts.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        var shift = await dbContext.Shifts.Include(candidate => candidate.Event)
+            .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
         if (shift is null)
+        {
+            return NotFound(CreateNotFoundProblem("Shift", id));
+        }
+        if (!ResourceOwnership.CanManageEvent(User, shift.Event.OrganizerId))
         {
             return NotFound(CreateNotFoundProblem("Shift", id));
         }
@@ -136,7 +165,14 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         Guid roleRequirementId,
         CancellationToken cancellationToken)
     {
-        if (!await dbContext.Events.AnyAsync(eventEntity => eventEntity.Id == eventId, cancellationToken))
+        var eventQuery = dbContext.Events.AsNoTracking().Where(eventEntity => eventEntity.Id == eventId);
+        if (ResourceOwnership.IsOrganizer(User))
+        {
+            var organizerId = ResourceOwnership.GetUserId(User);
+            eventQuery = eventQuery.Where(eventEntity => organizerId.HasValue && eventEntity.OrganizerId == organizerId.Value);
+        }
+
+        if (!await eventQuery.AnyAsync(cancellationToken))
         {
             return NotFound(CreateNotFoundProblem("Event", eventId));
         }

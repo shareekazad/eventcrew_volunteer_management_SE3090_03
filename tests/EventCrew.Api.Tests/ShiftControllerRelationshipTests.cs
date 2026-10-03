@@ -16,8 +16,9 @@ public class ShiftControllerRelationshipTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         await using var context = new EventCrewDbContext(options);
-        var selectedEvent = new Event { Id = Guid.NewGuid(), Title = "Selected event" };
-        var otherEvent = new Event { Id = Guid.NewGuid(), Title = "Other event" };
+        var organizerId = Guid.NewGuid();
+        var selectedEvent = new Event { Id = Guid.NewGuid(), OrganizerId = organizerId, Title = "Selected event" };
+        var otherEvent = new Event { Id = Guid.NewGuid(), OrganizerId = organizerId, Title = "Other event" };
         var requirement = new RoleRequirement
         {
             Id = Guid.NewGuid(),
@@ -30,7 +31,7 @@ public class ShiftControllerRelationshipTests
         context.RoleRequirements.Add(requirement);
         await context.SaveChangesAsync();
 
-        var controller = new ShiftController(context);
+        var controller = ControllerTestAuth.AsUser(new ShiftController(context), organizerId, "Organizer");
         var result = await controller.Create(new CreateShiftRequest
         {
             Title = "Morning registration",

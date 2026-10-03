@@ -1,10 +1,12 @@
 using EventCrew.Api.DTOs.Venues;
 using EventCrew.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventCrew.Api.Controllers;
 
 [ApiController]
+[Authorize(Roles = AuthorizationRoles.All)]
 [Route("api/[controller]")]
 public class VenuesController : ControllerBase
 {
@@ -35,6 +37,7 @@ public class VenuesController : ControllerBase
     }
 
     /// <summary>Create a new venue.</summary>
+    [Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
     [HttpPost]
     [ProducesResponseType(typeof(VenueResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -47,6 +50,7 @@ public class VenuesController : ControllerBase
     }
 
     /// <summary>Update an existing venue.</summary>
+    [Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(VenueResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -61,6 +65,7 @@ public class VenuesController : ControllerBase
     }
 
     /// <summary>Delete a venue.</summary>
+    [Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

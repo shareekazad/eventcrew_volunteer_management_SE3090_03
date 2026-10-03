@@ -1,11 +1,13 @@
 using EventCrew.Api.Dtos;
 using EventCrew.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventCrew.Api.Controllers;
 
 [ApiController]
+[Authorize(Roles = AuthorizationRoles.All)]
 [Route("api/role-requirements")]
 [Produces("application/json")]
 public sealed class RoleRequirementController(EventCrewDbContext dbContext) : ControllerBase
@@ -30,7 +32,15 @@ public sealed class RoleRequirementController(EventCrewDbContext dbContext) : Co
             });
         }
 
-        if (!await dbContext.Events.AnyAsync(eventEntity => eventEntity.Id == eventId, cancellationToken))
+        var eventQuery = dbContext.Events.AsNoTracking().Where(eventEntity => eventEntity.Id == eventId);
+        if (ResourceOwnership.IsOrganizer(User))
+        {
+            var organizerId = ResourceOwnership.GetUserId(User);
+            eventQuery = organizerId.HasValue
+                ? eventQuery.Where(eventEntity => eventEntity.OrganizerId == organizerId.Value)
+                : eventQuery.Where(_ => false);
+        }
+        if (!await eventQuery.AnyAsync(cancellationToken))
         {
             return NotFound(new ProblemDetails
             {
