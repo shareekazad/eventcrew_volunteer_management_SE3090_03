@@ -106,12 +106,12 @@ Vercel (React) ─── HTTPS ───► Render (ASP.NET Core API)
 
 | Key | Where used | Value |
 |-----|-----------|-------|
-| `ConnectionStrings__DefaultConnection` | ASP.NET Core | Render Postgres internal URL |
+| `ConnectionStrings__EventCrew` | ASP.NET Core | Render Postgres internal URL |
 | `AiService__BaseUrl` | ASP.NET Core | `https://<ai-service>.onrender.com` |
-| `BACKEND_BASE_URL` | Python AI service | `https://<api>.onrender.com` |
 | `ASPNETCORE_ENVIRONMENT` | ASP.NET Core | `Production` |
 
 Secrets are set via Render's environment panel — **never committed to Git**.
+The Python service consumes API-authorized event/venue snapshots and requires no backend URL or authentication credential. Keep it private to the ASP.NET Core API.
 
 ### Cost & availability strategy
 
@@ -150,4 +150,3 @@ If Render's free tier changes before deployment:
 - Render docs: https://render.com/docs
 - Vercel docs: https://vercel.com/docs
 - Local setup: `docker-compose.yml` + `README.md`
-

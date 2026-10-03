@@ -18,7 +18,10 @@ public interface IAgentService
     /// The plan is NOT auto-approved — an organizer must call ApproveAsync
     /// or RejectAsync.
     /// </summary>
-    Task<WorkflowRunStatusDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default);
+    Task<WorkflowRunStatusDto> PlanStaffingAsync(
+        Guid eventId,
+        Guid initiatedByUserId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the full state of a workflow run (plan, status, audit info).

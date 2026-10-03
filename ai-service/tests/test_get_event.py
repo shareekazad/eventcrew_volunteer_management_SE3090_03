@@ -1,29 +1,23 @@
-"""
-Manual smoke test — run from repo root with:
-    python -m ai_service.tests.test_get_event
-
-Or from ai-service/ folder with:
-    python tests/test_get_event.py
-"""
-
-import asyncio
+"""Unit tests for the event-context tool (no backend credentials or network)."""
+import pytest
 from app.tools.event_tools import get_event
-
-# Use the real event ID you created in Swagger earlier
-EVENT_ID = "f19b35ea-0355-4b95-acac-b58c820dbc3c"
+from app.tools.event_tools import EventSummary
 
 
-async def main():
-    event = await get_event(EVENT_ID)
-    if event is None:
-        print("Event not found.")
-        return
-    print(f"Title: {event.title}")
-    print(f"Status: {event.status}")
-    print(f"Roles: {len(event.role_requirements)}")
-    for r in event.role_requirements:
-        print(f"  - {r.role_name} x {r.required_headcount} ({r.min_experience_level})")
+@pytest.mark.asyncio
+async def test_get_event_returns_only_matching_authorized_snapshot():
+    event = EventSummary(
+        id="11111111-1111-1111-1111-111111111111",
+        venue_id=None,
+        title="Authorized event",
+        description=None,
+        category="Community",
+        start_date="2026-11-01T09:00:00Z",
+        end_date="2026-11-01T17:00:00Z",
+        status="Draft",
+        role_requirements=[],
+    )
 
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    assert await get_event(event.id, event) is event
+    with pytest.raises(ValueError, match="does not match"):
+        await get_event("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", event)

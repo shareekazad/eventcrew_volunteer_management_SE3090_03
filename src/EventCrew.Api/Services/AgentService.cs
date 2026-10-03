@@ -1,5 +1,5 @@
-using System.Text;
 using System.Text.Json;
+using System.Net.Http.Json;
 using EventCrew.Api.DTOs.Agent;
 using EventCrew.Domain.Entities;
 using EventCrew.Infrastructure.Data;
@@ -37,53 +37,106 @@ public class AgentService : IAgentService
     // ============================================================
     // PLAN — runs workflow, leaves run in AwaitingApproval
     // ============================================================
-    public async Task<WorkflowRunStatusDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
+    public async Task<WorkflowRunStatusDto> PlanStaffingAsync(
+        Guid eventId,
+        Guid initiatedByUserId,
+        CancellationToken cancellationToken = default)
     {
-        // ------------------------------------------------------------
-        // 1. Call the Python AI service
-        // ------------------------------------------------------------
-        var requestBody = JsonSerializer.Serialize(
-            new PlanRequestDto { EventId = eventId.ToString() });
+        var eventEntity = await _db.Events
+            .AsNoTracking()
+            .Include(item => item.Venue)
+            .Include(item => item.RoleRequirements)
+            .SingleOrDefaultAsync(item => item.Id == eventId, cancellationToken);
+        if (eventEntity is null)
+            throw new InvalidOperationException($"Event '{eventId}' was not found.");
 
-        using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+        var request = new PlanRequestDto
+        {
+            EventId = eventEntity.Id.ToString(),
+            Event = new PlanEventContextDto
+            {
+                Id = eventEntity.Id.ToString(),
+                VenueId = eventEntity.VenueId?.ToString(),
+                Title = eventEntity.Title,
+                Description = eventEntity.Description,
+                Category = eventEntity.Category,
+                StartDate = eventEntity.StartDate,
+                EndDate = eventEntity.EndDate,
+                Status = eventEntity.Status.ToString(),
+                RoleRequirements = eventEntity.RoleRequirements.Select(role => new PlanRoleRequirementContextDto
+                {
+                    Id = role.Id.ToString(),
+                    RoleName = role.RoleName,
+                    RequiredHeadcount = role.RequiredHeadcount,
+                    MinExperienceLevel = role.MinExperienceLevel.ToString()
+                }).ToList()
+            },
+            Venue = eventEntity.Venue is null ? null : new PlanVenueContextDto
+            {
+                Id = eventEntity.Venue.Id.ToString(),
+                Name = eventEntity.Venue.Name,
+                Address = eventEntity.Venue.Address,
+                City = eventEntity.Venue.City,
+                Latitude = eventEntity.Venue.Latitude,
+                Longitude = eventEntity.Venue.Longitude,
+                Capacity = eventEntity.Venue.Capacity
+            }
+        };
 
         _logger.LogInformation("Calling AI service for event {EventId}", eventId);
 
-        HttpResponseMessage response;
+        PlanResultDto plan;
         try
         {
-            response = await _http.PostAsync("/agent/plan", content, cancellationToken);
+            using var response = await _http.PostAsJsonAsync(
+                "/agent/plan",
+                request,
+                JsonOptions,
+                cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                throw new InvalidOperationException("AI service could not create a plan for this event.");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "AI service returned status {StatusCode} for event {EventId}",
+                    (int)response.StatusCode,
+                    eventId);
+                throw new AiServiceUnavailableException("AI planning service returned an error.");
+            }
+
+            var resultJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            try
+            {
+                plan = JsonSerializer.Deserialize<PlanResultDto>(resultJson, JsonOptions)
+                    ?? throw new JsonException("The AI service response was empty.");
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "AI service returned an invalid plan for event {EventId}", eventId);
+                throw new AiServiceUnavailableException("AI planning service returned an invalid response.", ex);
+            }
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "AI service unreachable for event {EventId}", eventId);
-            throw new InvalidOperationException("AI service is unreachable.", ex);
+            _logger.LogWarning(ex, "AI service unreachable for event {EventId}", eventId);
+            throw new AiServiceUnavailableException("AI planning service is unreachable.", ex);
         }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError(ex, "AI service timed out for event {EventId}", eventId);
-            throw new InvalidOperationException("AI service timed out.", ex);
+            _logger.LogWarning(ex, "AI service timed out for event {EventId}", eventId);
+            throw new AiServiceUnavailableException("AI planning service timed out.", ex);
         }
 
-        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        if (!Guid.TryParse(plan.EventId, out var plannedEventId) || plannedEventId != eventId ||
+            !string.Equals(plan.Status, "planned", StringComparison.OrdinalIgnoreCase) ||
+            plan.Steps.Count == 0 || plan.ToolCalls.Count == 0)
         {
-            var detail = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("AI service rejected plan for event {EventId}: {Detail}", eventId, detail);
-            throw new InvalidOperationException($"AI service rejected the request: {detail}");
+            throw new AiServiceUnavailableException("AI planning service returned an incomplete or mismatched plan.");
         }
-
-        if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
-        {
-            var detail = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("AI service unavailable for event {EventId}: {Detail}", eventId, detail);
-            throw new InvalidOperationException($"AI service temporarily unavailable: {detail}");
-        }
-
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var plan = JsonSerializer.Deserialize<PlanResultDto>(json, JsonOptions)
-                   ?? throw new InvalidOperationException("AI service returned an invalid plan.");
 
         _logger.LogInformation(
             "AI service returned plan for event {EventId}: {Steps} steps, {ToolCalls} tool calls",
@@ -92,7 +145,7 @@ public class AgentService : IAgentService
         // ------------------------------------------------------------
         // 2. Persist the workflow run + tool logs, status = AwaitingApproval
         // ------------------------------------------------------------
-        var run = await PersistWorkflowRunAsync(eventId, plan, cancellationToken);
+        var run = await PersistWorkflowRunAsync(eventId, initiatedByUserId, plan, cancellationToken);
 
         return new WorkflowRunStatusDto
         {
@@ -111,6 +164,7 @@ public class AgentService : IAgentService
     {
         var run = await _db.AgentWorkflowRuns
             .AsNoTracking()
+            .Include(r => r.ToolLogs)
             .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
         return run is null ? null : MapRunToDto(run);
@@ -122,6 +176,7 @@ public class AgentService : IAgentService
     public async Task<WorkflowRunDetailDto?> ApproveAsync(Guid runId, Guid reviewedByUserId, CancellationToken cancellationToken = default)
     {
         var run = await _db.AgentWorkflowRuns
+            .Include(r => r.ToolLogs)
             .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
         if (run is null)
@@ -133,7 +188,7 @@ public class AgentService : IAgentService
 
         run.Status = "Approved";
         run.ReviewedByUserId = reviewedByUserId;
-        run.ReviewNotes = "Approved by organizer.";
+        run.ReviewNotes = "Approved.";
         run.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(cancellationToken);
@@ -149,6 +204,7 @@ public class AgentService : IAgentService
     public async Task<WorkflowRunDetailDto?> RejectAsync(Guid runId, Guid reviewedByUserId, string reason, CancellationToken cancellationToken = default)
     {
         var run = await _db.AgentWorkflowRuns
+            .Include(r => r.ToolLogs)
             .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
         if (run is null)
@@ -165,7 +221,7 @@ public class AgentService : IAgentService
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Workflow run {RunId} rejected by user {UserId}: {Reason}", runId, reviewedByUserId, reason);
+        _logger.LogInformation("Workflow run {RunId} rejected by user {UserId}", runId, reviewedByUserId);
 
         return MapRunToDto(run);
     }
@@ -175,24 +231,17 @@ public class AgentService : IAgentService
     // ============================================================
     private async Task<AgentWorkflowRun> PersistWorkflowRunAsync(
         Guid eventId,
+        Guid initiatedByUserId,
         PlanResultDto plan,
         CancellationToken cancellationToken)
     {
-        var organizerId = await _db.Events
-            .Where(e => e.Id == eventId)
-            .Select(e => (Guid?)e.OrganizerId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (organizerId is null)
-            throw new InvalidOperationException($"Event '{eventId}' not found when persisting workflow run.");
-
         var planJson = JsonSerializer.Serialize(plan);
 
         var run = new AgentWorkflowRun
         {
             Id = Guid.NewGuid(),
             EventId = eventId,
-            InitiatedByUserId = organizerId.Value,
+            InitiatedByUserId = initiatedByUserId,
             Status = "AwaitingApproval",     // ← paused for human approval
             PromptObjective = plan.Objective,
             PlanSummary = planJson,
@@ -210,7 +259,9 @@ public class AgentService : IAgentService
                 InputParameters = JsonSerializer.Serialize(call.InputParams),
                 OutputSummary = JsonSerializer.Serialize(new { summary = call.OutputSummary }),
                 ExecutionDurationMs = call.DurationMs,
-                CalledAt = DateTimeOffset.UtcNow
+                CalledAt = DateTimeOffset.TryParse(call.CalledAt, out var calledAt)
+                    ? calledAt
+                    : DateTimeOffset.UtcNow
             });
         }
 
@@ -235,6 +286,19 @@ public class AgentService : IAgentService
         ReviewedByUserId = run.ReviewedByUserId,
         ReviewNotes = run.ReviewNotes,
         CreatedAt = run.CreatedAt,
-        UpdatedAt = run.UpdatedAt
+        UpdatedAt = run.UpdatedAt,
+        ToolLogs = run.ToolLogs.OrderBy(log => log.CalledAt).Select(log => new WorkflowToolLogDto
+        {
+            LogId = log.Id,
+            AgentName = log.AgentName,
+            ToolName = log.ToolName,
+            InputParameters = log.InputParameters,
+            OutputSummary = log.OutputSummary,
+            ExecutionDurationMs = log.ExecutionDurationMs,
+            CalledAt = log.CalledAt
+        }).ToList()
     };
 }
+
+public sealed class AiServiceUnavailableException(string message, Exception? innerException = null)
+    : Exception(message, innerException);

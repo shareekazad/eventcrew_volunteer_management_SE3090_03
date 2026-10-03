@@ -20,7 +20,14 @@ from app.graphs.planning_nodes import (
     calculate_ratio_node,
     build_plan_node,
 )
-from app.agents.planning_agent import PlanResult, PlanStep, ToolCallLog
+from app.agents.planning_agent import (
+    PlanResult,
+    PlanStep,
+    RoleStaffingRecommendation,
+    ToolCallLog,
+)
+from app.tools.event_tools import EventSummary
+from app.tools.venue_tools import VenueSummary
 
 
 # ---------------------------------------------------------------------------
@@ -86,14 +93,22 @@ planning_graph = _builder.compile()
 # ---------------------------------------------------------------------------
 # 5. High-level entry point
 # ---------------------------------------------------------------------------
-async def run_planning_graph(event_id: str) -> PlanResult:
+async def run_planning_graph(
+    event_id: str,
+    event_context: EventSummary,
+    venue_context: VenueSummary | None,
+) -> PlanResult:
     """
     Run the LangGraph-orchestrated planning workflow.
 
     Raises ValueError if the graph failed at any node, with the ORIGINAL
     error message from that node (not a generic downstream message).
     """
-    initial_state = PlanningState(event_id=event_id)
+    initial_state = PlanningState(
+        event_id=event_id,
+        event_context=event_context,
+        venue_context=venue_context,
+    )
 
     final_state = await planning_graph.ainvoke(initial_state)
 
@@ -105,6 +120,10 @@ async def run_planning_graph(event_id: str) -> PlanResult:
 
     steps = [PlanStep(**s) for s in final_state.steps]
     tool_calls = [ToolCallLog(**c) for c in final_state.tool_calls]
+    staffing_recommendations = [
+        RoleStaffingRecommendation(**recommendation)
+        for recommendation in final_state.staffing_recommendations
+    ]
 
     return PlanResult(
         objective=final_state.objective or "",
@@ -112,6 +131,7 @@ async def run_planning_graph(event_id: str) -> PlanResult:
         steps=steps,
         reasoning=final_state.reasoning or "",
         tool_calls=tool_calls,
+        staffing_recommendations=staffing_recommendations,
         next_agent=final_state.next_agent or "Unknown",
         status=final_state.status,
     )

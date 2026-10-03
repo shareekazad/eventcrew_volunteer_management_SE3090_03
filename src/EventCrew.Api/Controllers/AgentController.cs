@@ -16,56 +16,65 @@ public class AgentController : ControllerBase
     private readonly ILogger<AgentController> _logger;
     private readonly AppDbContext _dbContext;
 
-    // Reviewer ID header fall-back for testing if user claims are not present.
-    private const string ReviewerHeaderName = "X-Reviewer-Id";
-
-    public AgentController(IAgentService agentService, ILogger<AgentController> logger, AppDbContext dbContext)
+    public AgentController(
+        IAgentService agentService,
+        ILogger<AgentController> logger,
+        AppDbContext dbContext)
     {
         _agentService = agentService;
         _logger = logger;
         _dbContext = dbContext;
     }
 
-    // ============================================================
-    // 1. PLAN — runs the workflow, returns AwaitingApproval
-    // ============================================================
-    /// <summary>
-    /// Trigger the PlanningAgent for an event. The workflow runs and pauses
-    /// in AwaitingApproval status until an organizer approves or rejects it.
-    /// Returns 202 Accepted with the run ID.
-    /// </summary>
+    /// <summary>Runs the planning graph and pauses for organizer/admin review.</summary>
     [HttpPost("plan/{eventId:guid}")]
     [ProducesResponseType(typeof(WorkflowRunStatusDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<WorkflowRunStatusDto>> Plan(
         Guid eventId,
         CancellationToken cancellationToken)
     {
-        if (!ResourceOwnership.IsAdmin(User))
+        var eventOrganizerId = await _dbContext.Events.AsNoTracking()
+            .Where(item => item.Id == eventId)
+            .Select(item => (Guid?)item.OrganizerId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var initiatedByUserId = ResourceOwnership.GetUserId(User);
+        if (eventOrganizerId is null ||
+            (!ResourceOwnership.IsAdmin(User) && eventOrganizerId != initiatedByUserId))
         {
-            var organizerId = ResourceOwnership.GetUserId(User);
-            var ownsEvent = organizerId.HasValue && await _dbContext.Events.AsNoTracking()
-                .AnyAsync(item => item.Id == eventId && item.OrganizerId == organizerId.Value, cancellationToken);
-            if (!ownsEvent) return NotFound();
+            return NotFound();
+        }
+
+        if (initiatedByUserId is null)
+        {
+            return Forbid();
         }
 
         try
         {
-            var result = await _agentService.PlanStaffingAsync(eventId, cancellationToken);
+            var result = await _agentService.PlanStaffingAsync(
+                eventId,
+                initiatedByUserId.Value,
+                cancellationToken);
             return Accepted(result);
+        }
+        catch (AiServiceUnavailableException ex)
+        {
+            _logger.LogWarning(ex, "Planning service failed for event {EventId}", eventId);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = ex.Message });
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "Plan failed for event {EventId}", eventId);
+            _logger.LogWarning(ex, "Planning request rejected for event {EventId}", eventId);
             return BadRequest(new { error = ex.Message });
         }
     }
 
-    // ============================================================
-    // 2. GET RUN — full details of a workflow run
-    // ============================================================
-    /// <summary>Get the current state of a workflow run (status, plan, review info).</summary>
+    /// <summary>Gets a workflow run and its persisted plan/tool audit log.</summary>
     [HttpGet("runs/{runId:guid}")]
     [ProducesResponseType(typeof(WorkflowRunDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -74,31 +83,39 @@ public class AgentController : ControllerBase
         CancellationToken cancellationToken)
     {
         var run = await _agentService.GetRunAsync(runId, cancellationToken);
-        return run is null ? NotFound() : Ok(run);
+        if (run is null || !await CanAccessRunAsync(run, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        return Ok(run);
     }
 
-    // ============================================================
-    // 3. APPROVE — organizer approves the run
-    // ============================================================
-    /// <summary>
-    /// Approve a workflow run that is in AwaitingApproval status.
-    /// The reviewer ID is read from JWT claims or the X-Reviewer-Id header.
-    /// </summary>
+    /// <summary>Approves a workflow run that is awaiting review.</summary>
     [HttpPost("runs/{runId:guid}/approve")]
     [ProducesResponseType(typeof(WorkflowRunDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<WorkflowRunDetailDto>> Approve(
         Guid runId,
         CancellationToken cancellationToken)
     {
-        var reviewerId = ReadReviewerId();
-        if (reviewerId is null)
-            return BadRequest(new { error = $"Missing or invalid '{ReviewerHeaderName}' header (must be a GUID)." });
+        var reviewedByUserId = ResourceOwnership.GetUserId(User);
+        if (reviewedByUserId is null)
+        {
+            return Forbid();
+        }
+
+        var run = await _agentService.GetRunAsync(runId, cancellationToken);
+        if (run is null || !await CanAccessRunAsync(run, cancellationToken))
+        {
+            return NotFound();
+        }
 
         try
         {
-            var updated = await _agentService.ApproveAsync(runId, reviewerId.Value, cancellationToken);
+            var updated = await _agentService.ApproveAsync(runId, reviewedByUserId.Value, cancellationToken);
             return updated is null ? NotFound() : Ok(updated);
         }
         catch (InvalidOperationException ex)
@@ -108,29 +125,41 @@ public class AgentController : ControllerBase
         }
     }
 
-    // ============================================================
-    // 4. REJECT — organizer rejects the run with a reason
-    // ============================================================
-    /// <summary>
-    /// Reject a workflow run that is in AwaitingApproval status, with a required reason.
-    /// The reviewer ID is read from JWT claims or the X-Reviewer-Id header.
-    /// </summary>
+    /// <summary>Rejects a workflow run that is awaiting review, with an audit reason.</summary>
     [HttpPost("runs/{runId:guid}/reject")]
     [ProducesResponseType(typeof(WorkflowRunDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<WorkflowRunDetailDto>> Reject(
         Guid runId,
         [FromBody] RejectRunDto dto,
         CancellationToken cancellationToken)
     {
-        var reviewerId = ReadReviewerId();
-        if (reviewerId is null)
-            return BadRequest(new { error = $"Missing or invalid '{ReviewerHeaderName}' header (must be a GUID)." });
+        if (string.IsNullOrWhiteSpace(dto.Reason))
+        {
+            return BadRequest(new { error = "A rejection reason is required." });
+        }
+
+        var reviewedByUserId = ResourceOwnership.GetUserId(User);
+        if (reviewedByUserId is null)
+        {
+            return Forbid();
+        }
+
+        var run = await _agentService.GetRunAsync(runId, cancellationToken);
+        if (run is null || !await CanAccessRunAsync(run, cancellationToken))
+        {
+            return NotFound();
+        }
 
         try
         {
-            var updated = await _agentService.RejectAsync(runId, reviewerId.Value, dto.Reason, cancellationToken);
+            var updated = await _agentService.RejectAsync(
+                runId,
+                reviewedByUserId.Value,
+                dto.Reason.Trim(),
+                cancellationToken);
             return updated is null ? NotFound() : Ok(updated);
         }
         catch (InvalidOperationException ex)
@@ -140,18 +169,19 @@ public class AgentController : ControllerBase
         }
     }
 
-    // ============================================================
-    // HELPER
-    // ============================================================
-    private Guid? ReadReviewerId()
+    private async Task<bool> CanAccessRunAsync(
+        WorkflowRunDetailDto run,
+        CancellationToken cancellationToken)
     {
-        var fromUser = ResourceOwnership.GetUserId(User);
-        if (fromUser.HasValue) return fromUser;
+        if (ResourceOwnership.IsAdmin(User))
+        {
+            return true;
+        }
 
-        if (!Request.Headers.TryGetValue(ReviewerHeaderName, out var values))
-            return null;
-
-        var raw = values.ToString();
-        return Guid.TryParse(raw, out var id) ? id : null;
+        var organizerId = ResourceOwnership.GetUserId(User);
+        return organizerId.HasValue && await _dbContext.Events.AsNoTracking()
+            .AnyAsync(
+                item => item.Id == run.EventId && item.OrganizerId == organizerId.Value,
+                cancellationToken);
     }
 }

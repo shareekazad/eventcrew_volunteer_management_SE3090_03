@@ -1,9 +1,6 @@
-"""
-Tools for interacting with venues via the ASP.NET Core backend.
-"""
+"""Tool that inspects the venue snapshot supplied by the authorized API."""
 
 from pydantic import BaseModel
-from app.tools.http_client import BackendClient
 
 
 # ---------------------------------------------------------------------------
@@ -22,28 +19,18 @@ class VenueSummary(BaseModel):
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
-async def get_venue(venue_id: str) -> VenueSummary | None:
+async def get_venue(venue_id: str, venue_context: VenueSummary | None) -> VenueSummary | None:
     """
-    Fetch a venue by ID from the backend.
+    Inspect the event's authorized venue snapshot.
 
     Args:
         venue_id: UUID of the venue as a string.
 
     Returns:
-        VenueSummary if found, else None.
+        VenueSummary when its ID matches, else None.
     """
-    async with BackendClient() as client:
-        data = await client.get(f"/api/Venues/{venue_id}")
-
-    if data is None:
+    if venue_context is None:
         return None
-
-    return VenueSummary(
-        id=data["id"],
-        name=data["name"],
-        address=data["address"],
-        city=data["city"],
-        latitude=data.get("latitude"),
-        longitude=data.get("longitude"),
-        capacity=data["capacity"],
-    )
+    if venue_context.id.casefold() != venue_id.casefold():
+        raise ValueError("The supplied venue context does not match the event venue.")
+    return venue_context

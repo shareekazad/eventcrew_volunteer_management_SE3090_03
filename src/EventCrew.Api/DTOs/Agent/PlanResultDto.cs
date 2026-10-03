@@ -23,11 +23,26 @@ public class PlanResultDto
     [JsonPropertyName("tool_calls")]
     public List<ToolCallDto> ToolCalls { get; set; } = new();
 
+    [JsonPropertyName("staffing_recommendations")]
+    public List<RoleStaffingRecommendationDto> StaffingRecommendations { get; set; } = new();
+
     [JsonPropertyName("next_agent")]
     public string NextAgent { get; set; } = string.Empty;
 
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
+}
+
+public class RoleStaffingRecommendationDto
+{
+    [JsonPropertyName("role_name")]
+    public string RoleName { get; set; } = string.Empty;
+
+    [JsonPropertyName("required_headcount")]
+    public int RequiredHeadcount { get; set; }
+
+    [JsonPropertyName("minimum_experience_level")]
+    public string MinimumExperienceLevel { get; set; } = string.Empty;
 }
 
 
