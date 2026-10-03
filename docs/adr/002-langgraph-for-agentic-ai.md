@@ -62,15 +62,15 @@ We need a framework that:
 
 **Architectural pattern:**
 
-- **Tools** are plain async Python functions (`get_event`, `get_venue`, `calculate_staffing_ratio`)
+- **Tools** are plain async Python functions (`get_event`, `get_venue`, `calculate_staffing_ratio`) operating on the minimal event/venue snapshot authorized and supplied by ASP.NET Core
 - **Nodes** are small functions that call tools and update state
 - **State** is a Pydantic `PlanningState` model
 - **Graph** wires nodes with edges; **conditional edges** short-circuit to `END` on `state.status == "failed"`
 - **FastAPI** exposes the graph via `/agent/plan` (HTTP boundary)
-- **ASP.NET Core** is the only client of the Python service
+- **ASP.NET Core** is the only intended client of the Python service; it does not forward JWTs or backend credentials
 - **PostgreSQL** persists workflow runs and tool logs
 
-The graph itself is version-controlled, testable in isolation (with mocked tools), and documented through this ADR plus inline code comments.
+The graph itself is version-controlled, testable in isolation without external APIs or LLM credentials, and documented through this ADR plus inline code comments. The current workflow is deterministic and proposes configured staffing requirements; it does not select individual volunteers.
 
 ## Consequences
 

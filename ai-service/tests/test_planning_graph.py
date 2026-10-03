@@ -1,11 +1,4 @@
-"""
-Tests for the LangGraph-orchestrated planning workflow.
-
-These tests mock the HTTP-calling tools (get_event, get_venue) so tests
-run without a live ASP.NET Core backend.
-"""
-
-from unittest.mock import AsyncMock, patch
+"""Tests for the real LangGraph plan flow using authorized input snapshots."""
 
 import pytest
 
@@ -15,14 +8,14 @@ from app.tools.event_tools import EventSummary, RoleRequirementSummary
 from app.tools.venue_tools import VenueSummary
 
 
-# ---------------------------------------------------------------------------
-# Fixtures — reusable fake data
-# ---------------------------------------------------------------------------
-def make_fake_event() -> EventSummary:
+EVENT_ID = "11111111-1111-1111-1111-111111111111"
+VENUE_ID = "33333333-3333-3333-3333-333333333333"
+
+
+def make_event() -> EventSummary:
     return EventSummary(
-        id="11111111-1111-1111-1111-111111111111",
-        organizer_id="22222222-2222-2222-2222-222222222222",
-        venue_id="33333333-3333-3333-3333-333333333333",
+        id=EVENT_ID,
+        venue_id=VENUE_ID,
         title="Test Tech Meetup",
         description="A test event",
         category="Conference",
@@ -32,7 +25,7 @@ def make_fake_event() -> EventSummary:
         role_requirements=[
             RoleRequirementSummary(
                 id="44444444-4444-4444-4444-444444444444",
-                role_name="Usher",
+                role_name="Guide",
                 required_headcount=5,
                 min_experience_level="Beginner",
             )
@@ -40,9 +33,9 @@ def make_fake_event() -> EventSummary:
     )
 
 
-def make_fake_venue() -> VenueSummary:
+def make_venue() -> VenueSummary:
     return VenueSummary(
-        id="33333333-3333-3333-3333-333333333333",
+        id=VENUE_ID,
         name="Test Venue",
         address="123 Test St",
         city="Colombo",
@@ -52,87 +45,51 @@ def make_fake_venue() -> VenueSummary:
     )
 
 
-# ---------------------------------------------------------------------------
-# Happy path
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_run_planning_graph_produces_full_plan():
-    """With mocked tools, the graph returns a complete, well-formed plan."""
-    with patch(
-        "app.graphs.planning_nodes.get_event",
-        new=AsyncMock(return_value=make_fake_event()),
-    ), patch(
-        "app.graphs.planning_nodes.get_venue",
-        new=AsyncMock(return_value=make_fake_venue()),
-    ):
-        result = await run_planning_graph("11111111-1111-1111-1111-111111111111")
+async def test_graph_runs_allowlisted_tools_and_returns_structured_staffing_plan():
+    result = await run_planning_graph(EVENT_ID, make_event(), make_venue())
 
     assert isinstance(result, PlanResult)
     assert result.status == "planned"
-    assert result.next_agent == "MatchingAgent"
+    assert result.next_agent == "OrganizerReview"
     assert "Test Tech Meetup" in result.objective
     assert len(result.steps) == 4
-    assert len(result.tool_calls) == 3
-
-    # Verify the sequence of tool calls
-    tool_names = [c.tool_name for c in result.tool_calls]
-    assert tool_names == ["get_event", "get_venue", "calculate_staffing_ratio"]
-
-
-@pytest.mark.asyncio
-async def test_run_planning_graph_includes_reasoning():
-    """Reasoning string mentions event, venue and totals."""
-    with patch(
-        "app.graphs.planning_nodes.get_event",
-        new=AsyncMock(return_value=make_fake_event()),
-    ), patch(
-        "app.graphs.planning_nodes.get_venue",
-        new=AsyncMock(return_value=make_fake_venue()),
-    ):
-        result = await run_planning_graph("11111111-1111-1111-1111-111111111111")
-
-    assert "Test Tech Meetup" in result.reasoning
-    assert "Test Venue" in result.reasoning
+    assert [call.tool_name for call in result.tool_calls] == [
+        "get_event",
+        "get_venue",
+        "calculate_staffing_ratio",
+    ]
+    assert result.staffing_recommendations[0].model_dump() == {
+        "role_name": "Guide",
+        "required_headcount": 5,
+        "minimum_experience_level": "Beginner",
+    }
     assert "capacity 500" in result.reasoning
-
-
-# ---------------------------------------------------------------------------
-# Failure paths
-# ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_run_planning_graph_raises_when_event_not_found():
-    """Event missing → ValueError with a clear message."""
-    with patch(
-        "app.graphs.planning_nodes.get_event",
-        new=AsyncMock(return_value=None),
-    ):
-        with pytest.raises(ValueError, match="not found"):
-            await run_planning_graph("00000000-0000-0000-0000-000000000000")
+    assert "does not assign individual volunteers" in result.reasoning
 
 
 @pytest.mark.asyncio
-async def test_run_planning_graph_raises_when_event_has_no_venue():
-    """Event without venue → ValueError explaining why."""
-    fake_event = make_fake_event()
-    fake_event.venue_id = None
+async def test_graph_stops_when_event_has_no_venue():
+    event = make_event()
+    event.venue_id = None
 
-    with patch(
-        "app.graphs.planning_nodes.get_event",
-        new=AsyncMock(return_value=fake_event),
-    ):
-        with pytest.raises(ValueError, match="no venue"):
-            await run_planning_graph("11111111-1111-1111-1111-111111111111")
+    with pytest.raises(ValueError, match="no venue"):
+        await run_planning_graph(EVENT_ID, event, None)
 
 
 @pytest.mark.asyncio
-async def test_run_planning_graph_raises_when_venue_not_found():
-    """Venue ID exists on event but missing in backend → ValueError."""
-    with patch(
-        "app.graphs.planning_nodes.get_event",
-        new=AsyncMock(return_value=make_fake_event()),
-    ), patch(
-        "app.graphs.planning_nodes.get_venue",
-        new=AsyncMock(return_value=None),
-    ):
-        with pytest.raises(ValueError, match="Venue"):
-            await run_planning_graph("11111111-1111-1111-1111-111111111111")
+async def test_graph_rejects_mismatched_event_snapshot():
+    event = make_event()
+    event.id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    with pytest.raises(ValueError, match="does not match"):
+        await run_planning_graph(EVENT_ID, event, make_venue())
+
+
+@pytest.mark.asyncio
+async def test_graph_rejects_mismatched_venue_snapshot():
+    venue = make_venue()
+    venue.id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    with pytest.raises(ValueError, match="does not match"):
+        await run_planning_graph(EVENT_ID, make_event(), venue)

@@ -33,9 +33,9 @@ def _log_tool_call(tool_name: str, input_params: dict, output_summary: str, dura
 # Node 1: Fetch the event
 # ---------------------------------------------------------------------------
 async def fetch_event_node(state: PlanningState) -> dict:
-    """Fetch the event by ID. Sets state.event."""
+    """Inspect the API-authorized event snapshot. Sets state.event."""
     t0 = time.perf_counter()
-    event = await get_event(state.event_id)
+    event = await get_event(state.event_id, state.event_context)
     duration_ms = int((time.perf_counter() - t0) * 1000)
 
     if event is None:
@@ -70,7 +70,7 @@ async def fetch_event_node(state: PlanningState) -> dict:
 # Node 2: Fetch the venue
 # ---------------------------------------------------------------------------
 async def fetch_venue_node(state: PlanningState) -> dict:
-    """Fetch the venue for the event. Sets state.venue."""
+    """Inspect the API-authorized venue snapshot. Sets state.venue."""
     if state.event is None:
         return {"error": "Cannot fetch venue without an event.", "status": "failed"}
 
@@ -81,7 +81,7 @@ async def fetch_venue_node(state: PlanningState) -> dict:
         }
 
     t0 = time.perf_counter()
-    venue = await get_venue(state.event.venue_id)
+    venue = await get_venue(state.event.venue_id, state.venue_context)
     duration_ms = int((time.perf_counter() - t0) * 1000)
 
     if venue is None:
@@ -154,11 +154,24 @@ async def build_plan_node(state: PlanningState) -> dict:
     if state.event is None or state.venue is None or state.ratio is None:
         return {"error": "Cannot build plan without event, venue and ratio.", "status": "failed"}
 
-    next_agent = "MatchingAgent"
+    staffing_recommendations = [
+        {
+            "role_name": role.role_name,
+            "required_headcount": role.required_headcount,
+            "minimum_experience_level": role.min_experience_level,
+        }
+        for role in state.event.role_requirements
+    ]
+    configured_headcount = sum(role.required_headcount for role in state.event.role_requirements)
+    next_agent = "OrganizerReview"
 
     step_entry = {
         "step_number": 4,
-        "action": f"Hand off to {next_agent} to rank candidate volunteers",
+        "action": (
+            f"Prepare the proposal for organizer review: "
+            f"{len(staffing_recommendations)} configured roles, "
+            f"{configured_headcount} required volunteers."
+        ),
         "tool": None,
         "agent": next_agent,
         "status": "planned",
@@ -166,10 +179,12 @@ async def build_plan_node(state: PlanningState) -> dict:
 
     reasoning = (
         f"Event '{state.event.title}' at '{state.venue.name}' "
-        f"(capacity {state.venue.capacity}). Based on the staffing rule, "
+        f"(capacity {state.venue.capacity}). The capacity-based baseline is "
         f"{state.ratio.recommended_ushers} ushers and "
         f"{state.ratio.recommended_registration_staff} registration staff are recommended "
-        f"(total {state.ratio.total_staff}). Delegating to {next_agent} to select candidates."
+        f"(total {state.ratio.total_staff}). The proposal preserves "
+        f"{configured_headcount} volunteers across {len(staffing_recommendations)} "
+        "configured event roles; it does not assign individual volunteers."
     )
 
     return {
@@ -177,5 +192,6 @@ async def build_plan_node(state: PlanningState) -> dict:
         "reasoning": reasoning,
         "steps": state.steps + [step_entry],
         "next_agent": next_agent,
+        "staffing_recommendations": staffing_recommendations,
         "status": "planned",
     }

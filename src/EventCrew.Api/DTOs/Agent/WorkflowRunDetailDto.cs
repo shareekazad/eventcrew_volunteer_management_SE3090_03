@@ -18,9 +18,22 @@ public class WorkflowRunDetailDto
     /// </summary>
     public string? PlanSummary { get; set; }
 
+    public List<WorkflowToolLogDto> ToolLogs { get; set; } = new();
+
     public Guid? ReviewedByUserId { get; set; }
     public string? ReviewNotes { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public class WorkflowToolLogDto
+{
+    public Guid LogId { get; set; }
+    public string AgentName { get; set; } = string.Empty;
+    public string ToolName { get; set; } = string.Empty;
+    public string? InputParameters { get; set; }
+    public string? OutputSummary { get; set; }
+    public int ExecutionDurationMs { get; set; }
+    public DateTimeOffset CalledAt { get; set; }
 }

@@ -1,67 +1,37 @@
-"""
-Smoke test for PlanningAgent. Run from ai-service/ with:
-    python -m tests.test_planning_agent
+"""Tests that the PlanningAgent runs the compiled graph."""
 
-Requires the ASP.NET Core API running on port 5100.
-"""
+import pytest
 
-import asyncio
-import json
 from app.agents.planning_agent import PlanningAgent
-
-# Replace with your real event ID if needed
-EVENT_ID = "f19b35ea-0355-4b95-acac-b58c820dbc3c"
-
-
-async def main():
-    agent = PlanningAgent()
-
-    print("=" * 70)
-    print("PlanningAgent — running against event:", EVENT_ID)
-    print("=" * 70)
-
-    try:
-        result = await agent.plan(EVENT_ID)
-    except ValueError as e:
-        print(f"AGENT FAILED: {e}")
-        return
-
-    print()
-    print("OBJECTIVE:", result.objective)
-    print("NEXT AGENT:", result.next_agent)
-    print("STATUS:", result.status)
-
-    print()
-    print("-" * 70)
-    print("PLAN STEPS:")
-    print("-" * 70)
-    for step in result.steps:
-        tool_info = f" (tool: {step.tool})" if step.tool else " (no tool)"
-        print(f"  {step.step_number}. [{step.agent}] {step.action}{tool_info}")
-
-    print()
-    print("-" * 70)
-    print("REASONING:")
-    print("-" * 70)
-    print(f"  {result.reasoning}")
-
-    print()
-    print("-" * 70)
-    print("TOOL CALL LOG (audit trail):")
-    print("-" * 70)
-    for log in result.tool_calls:
-        print(f"  → {log.tool_name}")
-        print(f"      input:    {log.input_params}")
-        print(f"      output:   {log.output_summary}")
-        print(f"      duration: {log.duration_ms} ms")
-        print(f"      at:       {log.called_at}")
-
-    print()
-    print("=" * 70)
-    print("FULL JSON OUTPUT:")
-    print("=" * 70)
-    print(json.dumps(result.model_dump(), indent=2, default=str))
+from app.tools.event_tools import EventSummary
+from app.tools.venue_tools import VenueSummary
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+@pytest.mark.asyncio
+async def test_planning_agent_delegates_to_graph_and_returns_tools():
+    event = EventSummary(
+        id="11111111-1111-1111-1111-111111111111",
+        venue_id="22222222-2222-2222-2222-222222222222",
+        title="Planning test",
+        description=None,
+        category="Community",
+        start_date="2026-11-01T09:00:00Z",
+        end_date="2026-11-01T17:00:00Z",
+        status="Draft",
+        role_requirements=[],
+    )
+    venue = VenueSummary(
+        id=event.venue_id,
+        name="Community Hall",
+        address="1 Main Street",
+        city="Colombo",
+        latitude=None,
+        longitude=None,
+        capacity=100,
+    )
+
+    result = await PlanningAgent().plan(event.id, event, venue)
+
+    assert result.tool_calls
+    assert result.tool_calls[-1].tool_name == "calculate_staffing_ratio"
+    assert result.staffing_recommendations == []

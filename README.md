@@ -135,19 +135,19 @@ Detailed architecture: [`docs/architecture.md`](docs/architecture.md)
 The minimum acceptance workflow:
 
 1. **Organizer triggers planning** → `POST /api/Agent/plan/{eventId}` on ASP.NET Core
-2. **ASP.NET Core calls Python** → `POST /agent/plan` on the FastAPI service
+2. **ASP.NET Core authorizes the event owner** and sends the minimal event, role, and venue snapshot to `POST /agent/plan`; no JWT or backend credential is forwarded
 3. **LangGraph orchestrates nodes:**
    - `fetch_event_node` → tool: `get_event`
    - `fetch_venue_node` → tool: `get_venue`
    - `calculate_ratio_node` → tool: `calculate_staffing_ratio`
-   - `build_plan_node` → assembles structured plan, delegates to MatchingAgent
+   - `build_plan_node` → assembles the configured role proposal for organizer review
 4. **Graph short-circuits to END on any node failure** (conditional edges)
 5. **Python returns `PlanResult`** → ASP.NET Core persists to `agent_workflow_runs` + `agent_tool_logs`
-6. **Organizer reviews and approves** (human-in-the-loop — Section 9.1)
+6. **The event owner or an Admin retrieves and reviews the run** (human-in-the-loop)
 
-**Agentic evidence:** structured plan, distinct agent roles, allow-listed tools, persisted state, deterministic validation (DB-level constraints + service-layer business rules), audit trail, safe failure.
+**Agentic evidence:** compiled LangGraph state transitions, allow-listed event/venue/scheduling tools, structured role recommendations grounded in the event, persisted workflow/tool audit, explicit human review, and safe failure. This is a deterministic agent workflow; it does not call an external LLM or select individual volunteers.
 
-Full evaluation: [`docs/agentic-ai-evaluation.md`](docs/agentic-ai-evaluation.md)
+Architecture decision: [`docs/adr/002-langgraph-for-agentic-ai.md`](docs/adr/002-langgraph-for-agentic-ai.md)
 
 ---
 
@@ -234,9 +234,12 @@ FastAPI docs: **http://localhost:8000/docs**
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `ConnectionStrings__DefaultConnection` | Postgres connection | see `appsettings.Development.json` |
-| `AiService__BaseUrl` | Python AI service URL | `http://localhost:8000` |
-| `BACKEND_BASE_URL` | ASP.NET Core URL used by AI service | `http://localhost:5100` |
+| `ConnectionStrings__EventCrew` | Postgres connection | see `appsettings.Development.json` |
+| `AiService__BaseUrl` | URL of the private Python AI service used by ASP.NET Core | `http://localhost:8000` |
+
+The Python service accepts an API-authorized event/venue snapshot. It does not
+need `BACKEND_BASE_URL` and receives no JWT, password, or API credential.
+Keep its deployment private so only the ASP.NET Core API can call it.
 
 ---
 
@@ -248,6 +251,10 @@ FastAPI docs: **http://localhost:8000/docs**
 | `/api/Venues/{id}` | GET, PUT, DELETE | Single venue operations |
 | `/api/Events` | GET, POST | List, create events |
 | `/api/Events/{id}` | GET, PUT, DELETE | Single event operations |
+| `/api/Agent/plan/{eventId}` | POST | Run event staffing proposal (Organizer/Admin; organizer ownership enforced) |
+| `/api/Agent/runs/{runId}` | GET | Retrieve the authorized workflow result and tool audit |
+| `/api/Agent/runs/{runId}/approve` | POST | Approve an awaiting plan |
+| `/api/Agent/runs/{runId}/reject` | POST | Reject an awaiting plan with a reason |
 | `/api/Events/{id}/status` | PATCH | Status transition (validated) |
 | `/api/Events/{eventId}/roles` | POST | Add role requirement |
 | `/api/Events/{eventId}/roles/{roleId}` | DELETE | Remove role requirement |

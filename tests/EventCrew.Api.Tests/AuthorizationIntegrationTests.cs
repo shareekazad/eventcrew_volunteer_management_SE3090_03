@@ -5,6 +5,7 @@ using System.Text;
 using System.Net.Http.Json;
 using EventCrew.Api;
 using EventCrew.Api.Controllers;
+using EventCrew.Api.DTOs.Agent;
 using EventCrew.Api.Services;
 using EventCrew.Domain.Entities;
 using EventCrew.Infrastructure.Data;
@@ -221,6 +222,190 @@ public sealed class AuthorizationIntegrationTests
     }
 
     [Fact]
+    public async Task AgentPlanningRequiresOrganizerOrAdminAndEnforcesEventOwnership()
+    {
+        await using var host = await CreateHostAsync();
+        var data = await SeedResourcesAsync(host);
+
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await host.Client.PostAsync($"/api/agent/plan/{data.EventAId}", null)).StatusCode);
+
+        using var volunteer = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/plan/{data.EventAId}",
+            AuthorizationRoles.Volunteer,
+            data.VolunteerAUserId);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.SendAsync(volunteer)).StatusCode);
+
+        using var foreignOrganizer = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/plan/{data.EventAId}",
+            AuthorizationRoles.Organizer,
+            data.OrganizerBId);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.SendAsync(foreignOrganizer)).StatusCode);
+
+        using var owner = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/plan/{data.EventAId}",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+        var ownerResponse = await host.Client.SendAsync(owner);
+        Assert.Equal(HttpStatusCode.Accepted, ownerResponse.StatusCode);
+        var ownerRun = await ownerResponse.Content.ReadFromJsonAsync<WorkflowRunStatusDto>();
+        Assert.NotNull(ownerRun);
+        Assert.Equal("AwaitingApproval", ownerRun!.Status);
+        using var ownerRunRead = CreateRequest(
+            HttpMethod.Get,
+            $"/api/agent/runs/{ownerRun.RunId}",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+        var ownerRunDetails = await host.Client.SendAsync(ownerRunRead);
+        Assert.Equal(HttpStatusCode.OK, ownerRunDetails.StatusCode);
+        var ownerRunBody = await ownerRunDetails.Content.ReadFromJsonAsync<WorkflowRunDetailDto>();
+        Assert.Equal(data.OrganizerAId, ownerRunBody!.InitiatedByUserId);
+
+        using var admin = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/plan/{data.EventBId}",
+            AuthorizationRoles.Admin,
+            data.AdminUserId);
+        Assert.Equal(HttpStatusCode.Accepted, (await host.Client.SendAsync(admin)).StatusCode);
+    }
+
+    [Fact]
+    public async Task AgentRunRetrievalAndReviewAreOwnershipScopedAndTransitionOnce()
+    {
+        await using var host = await CreateHostAsync();
+        var data = await SeedResourcesAsync(host);
+
+        using var plan = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/plan/{data.EventAId}",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+        var planResponse = await host.Client.SendAsync(plan);
+        var created = await planResponse.Content.ReadFromJsonAsync<WorkflowRunStatusDto>();
+        Assert.NotNull(created);
+
+        var runPath = $"/api/agent/runs/{created!.RunId}";
+        using var anonymousRead = new HttpRequestMessage(HttpMethod.Get, runPath);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client.SendAsync(anonymousRead)).StatusCode);
+
+        using var volunteerRead = CreateRequest(
+            HttpMethod.Get,
+            runPath,
+            AuthorizationRoles.Volunteer,
+            data.VolunteerAUserId);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.SendAsync(volunteerRead)).StatusCode);
+
+        using var foreignRead = CreateRequest(
+            HttpMethod.Get,
+            runPath,
+            AuthorizationRoles.Organizer,
+            data.OrganizerBId);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.SendAsync(foreignRead)).StatusCode);
+
+        using var ownerRead = CreateRequest(
+            HttpMethod.Get,
+            runPath,
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.SendAsync(ownerRead)).StatusCode);
+
+        using var adminRead = CreateRequest(
+            HttpMethod.Get,
+            runPath,
+            AuthorizationRoles.Admin,
+            data.AdminUserId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.SendAsync(adminRead)).StatusCode);
+
+        using var foreignApproval = CreateRequest(
+            HttpMethod.Post,
+            $"{runPath}/approve",
+            AuthorizationRoles.Organizer,
+            data.OrganizerBId);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.SendAsync(foreignApproval)).StatusCode);
+
+        using var approve = CreateRequest(
+            HttpMethod.Post,
+            $"{runPath}/approve",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+        var approvedResponse = await host.Client.SendAsync(approve);
+        Assert.Equal(HttpStatusCode.OK, approvedResponse.StatusCode);
+        var approved = await approvedResponse.Content.ReadFromJsonAsync<WorkflowRunDetailDto>();
+        Assert.Equal("Approved", approved!.Status);
+        Assert.Equal(data.OrganizerAId, approved.ReviewedByUserId);
+
+        using var approveAgain = CreateRequest(
+            HttpMethod.Post,
+            $"{runPath}/approve",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.SendAsync(approveAgain)).StatusCode);
+
+        using var planAgain = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/plan/{data.EventAId}",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+        var secondPlanResponse = await host.Client.SendAsync(planAgain);
+        var secondRun = await secondPlanResponse.Content.ReadFromJsonAsync<WorkflowRunStatusDto>();
+        Assert.NotNull(secondRun);
+        using var reject = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/runs/{secondRun!.RunId}/reject",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId,
+            """{"reason":"Capacity conflict"}""");
+        var rejectedResponse = await host.Client.SendAsync(reject);
+        Assert.Equal(HttpStatusCode.OK, rejectedResponse.StatusCode);
+        var rejected = await rejectedResponse.Content.ReadFromJsonAsync<WorkflowRunDetailDto>();
+        Assert.Equal("Rejected", rejected!.Status);
+        Assert.Equal("Capacity conflict", rejected.ReviewNotes);
+    }
+
+    [Fact]
+    public async Task AgentRoutesReturnNotFoundForUnknownRunIds()
+    {
+        await using var host = await CreateHostAsync();
+        var missingRunId = Guid.NewGuid();
+
+        using var get = CreateRequest(
+            HttpMethod.Get,
+            $"/api/agent/runs/{missingRunId}",
+            AuthorizationRoles.Admin,
+            Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.SendAsync(get)).StatusCode);
+
+        using var approve = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/runs/{missingRunId}/approve",
+            AuthorizationRoles.Admin,
+            Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.SendAsync(approve)).StatusCode);
+    }
+
+    [Fact]
+    public async Task AgentPlanningReturnsServiceUnavailableWhenPlanningServiceFails()
+    {
+        await using var host = await CreateHostAsync();
+        var data = await SeedResourcesAsync(host);
+        var fakeService = Assert.IsType<TestAgentService>(
+            host.App.Services.GetRequiredService<IAgentService>());
+        fakeService.FailPlanRequests = true;
+
+        using var request = CreateRequest(
+            HttpMethod.Post,
+            $"/api/agent/plan/{data.EventAId}",
+            AuthorizationRoles.Organizer,
+            data.OrganizerAId);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await host.Client.SendAsync(request)).StatusCode);
+    }
+
+    [Fact]
     public void ControllerAndActionRoleMetadataMatchesTheRolePlan()
     {
         AssertControllerRole<AgentController>(AuthorizationRoles.AdminOrOrganizer);
@@ -415,6 +600,7 @@ public sealed class AuthorizationIntegrationTests
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         builder.Services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
         builder.Services.AddScoped<IEventService, EventService>();
+        builder.Services.AddSingleton<IAgentService, TestAgentService>();
         builder.Services.AddAuthentication("Test")
             .AddScheme<AuthenticationSchemeOptions, RoleHeaderAuthenticationHandler>("Test", _ => { });
         builder.Services.AddAuthorization();
@@ -464,6 +650,86 @@ public sealed class AuthorizationIntegrationTests
             var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, Scheme.Name);
             return Task.FromResult(AuthenticateResult.Success(ticket));
+        }
+    }
+
+    private sealed class TestAgentService : IAgentService
+    {
+        private readonly Dictionary<Guid, WorkflowRunDetailDto> _runs = new();
+        public bool FailPlanRequests { get; set; }
+
+        public Task<WorkflowRunStatusDto> PlanStaffingAsync(
+            Guid eventId,
+            Guid initiatedByUserId,
+            CancellationToken cancellationToken = default)
+        {
+            if (FailPlanRequests)
+            {
+                return Task.FromException<WorkflowRunStatusDto>(
+                    new AiServiceUnavailableException("AI planning service is unavailable."));
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var run = new WorkflowRunDetailDto
+            {
+                RunId = Guid.NewGuid(),
+                EventId = eventId,
+                InitiatedByUserId = initiatedByUserId,
+                Status = "AwaitingApproval",
+                Objective = "Test plan",
+                PlanSummary = """{"status":"planned"}""",
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            _runs.Add(run.RunId, run);
+            return Task.FromResult(new WorkflowRunStatusDto
+            {
+                RunId = run.RunId,
+                EventId = run.EventId,
+                Status = run.Status,
+                Objective = run.Objective,
+                CreatedAt = run.CreatedAt
+            });
+        }
+
+        public Task<WorkflowRunDetailDto?> GetRunAsync(
+            Guid runId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_runs.GetValueOrDefault(runId));
+
+        public Task<WorkflowRunDetailDto?> ApproveAsync(
+            Guid runId,
+            Guid reviewedByUserId,
+            CancellationToken cancellationToken = default) =>
+            TransitionAsync(runId, reviewedByUserId, "Approved", "Approved.");
+
+        public Task<WorkflowRunDetailDto?> RejectAsync(
+            Guid runId,
+            Guid reviewedByUserId,
+            string reason,
+            CancellationToken cancellationToken = default) =>
+            TransitionAsync(runId, reviewedByUserId, "Rejected", reason);
+
+        private Task<WorkflowRunDetailDto?> TransitionAsync(
+            Guid runId,
+            Guid reviewerId,
+            string status,
+            string notes)
+        {
+            if (!_runs.TryGetValue(runId, out var run))
+            {
+                return Task.FromResult<WorkflowRunDetailDto?>(null);
+            }
+            if (run.Status != "AwaitingApproval")
+            {
+                throw new InvalidOperationException("Only awaiting runs can be reviewed.");
+            }
+
+            run.Status = status;
+            run.ReviewedByUserId = reviewerId;
+            run.ReviewNotes = notes;
+            run.UpdatedAt = DateTimeOffset.UtcNow;
+            return Task.FromResult<WorkflowRunDetailDto?>(run);
         }
     }
 

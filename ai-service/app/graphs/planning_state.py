@@ -24,6 +24,8 @@ class PlanningState(BaseModel):
 
     # ---- Input ----
     event_id: str
+    event_context: EventSummary
+    venue_context: VenueSummary | None = None
 
     # ---- Intermediate results (filled by nodes) ----
     event: EventSummary | None = None
@@ -36,6 +38,7 @@ class PlanningState(BaseModel):
     steps: list[dict] = Field(default_factory=list)
     tool_calls: list[dict] = Field(default_factory=list)
     next_agent: str | None = None
+    staffing_recommendations: list[dict] = Field(default_factory=list)
     status: str = "running"
 
     # ---- Error tracking ----

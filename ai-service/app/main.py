@@ -10,9 +10,9 @@ import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from app.agents.planning_agent import PlanResult
-from app.graphs.planning_graph import run_planning_graph
-from app.tools.http_client import BackendError
+from app.agents.planning_agent import PlanResult, PlanningAgent
+from app.tools.event_tools import EventSummary
+from app.tools.venue_tools import VenueSummary
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +48,8 @@ class ServiceInfoResponse(BaseModel):
 
 class PlanRequest(BaseModel):
     event_id: str = Field(..., description="UUID of the event to plan staffing for.")
+    event: EventSummary
+    venue: VenueSummary | None
 
 
 # ---------------------------------------------------------------------------
@@ -76,19 +78,21 @@ async def plan_staffing(request: PlanRequest) -> PlanResult:
     """
     Run the LangGraph-orchestrated planning workflow against a given event.
 
-    The workflow calls only allow-listed tools (get_event, get_venue,
-    calculate_staffing_ratio) and produces an auditable plan with a tool-call log.
+    ASP.NET Core authorizes the caller and supplies only the required event and
+    venue snapshot. The graph executes its allow-listed tools without receiving
+    a JWT, password, backend credential, or other authentication secret.
     """
     logger.info("Received plan request for event_id=%s", request.event_id)
 
     try:
-        result = await run_planning_graph(request.event_id)
+        result = await PlanningAgent().plan(
+            request.event_id,
+            request.event,
+            request.venue,
+        )
     except ValueError as e:
         logger.warning("Planning failed (validation) for event_id=%s: %s", request.event_id, e)
         raise HTTPException(status_code=400, detail=str(e))
-    except BackendError as e:
-        logger.error("Planning failed (backend) for event_id=%s: %s", request.event_id, e)
-        raise HTTPException(status_code=503, detail=str(e))
 
     logger.info(
         "Plan complete: %d steps, %d tool calls, next_agent=%s",
