@@ -12,8 +12,9 @@ namespace EventCrew.Api.Services;
 ///
 /// Responsibilities:
 /// 1. Call the Python /agent/plan endpoint over HTTP.
-/// 2. Persist the workflow run and tool-call audit trail to PostgreSQL.
-/// 3. Return the structured plan.
+/// 2. Persist the workflow run (status = AwaitingApproval) and tool-call audit trail.
+/// 3. Manage human approval: approve / reject with audit info.
+/// 4. Return structured DTOs to the controller.
 /// </summary>
 public class AgentService : IAgentService
 {
@@ -33,11 +34,14 @@ public class AgentService : IAgentService
         _logger = logger;
     }
 
-    public async Task<PlanResultDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
+    // ============================================================
+    // PLAN — runs workflow, leaves run in AwaitingApproval
+    // ============================================================
+    public async Task<WorkflowRunStatusDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
     {
-        // ----------------------------------------------------------------
+        // ------------------------------------------------------------
         // 1. Call the Python AI service
-        // ----------------------------------------------------------------
+        // ------------------------------------------------------------
         var requestBody = JsonSerializer.Serialize(
             new PlanRequestDto { EventId = eventId.ToString() });
 
@@ -61,7 +65,6 @@ public class AgentService : IAgentService
             throw new InvalidOperationException("AI service timed out.", ex);
         }
 
-        // Propagate business errors from Python (400 Bad Request)
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
             var detail = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -69,7 +72,6 @@ public class AgentService : IAgentService
             throw new InvalidOperationException($"AI service rejected the request: {detail}");
         }
 
-        // Propagate service unavailable errors
         if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
         {
             var detail = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -87,34 +89,102 @@ public class AgentService : IAgentService
             "AI service returned plan for event {EventId}: {Steps} steps, {ToolCalls} tool calls",
             eventId, plan.Steps.Count, plan.ToolCalls.Count);
 
-        // ----------------------------------------------------------------
-        // 2. Persist the workflow run + tool logs
-        // ----------------------------------------------------------------
-        await PersistWorkflowRunAsync(eventId, plan, cancellationToken);
+        // ------------------------------------------------------------
+        // 2. Persist the workflow run + tool logs, status = AwaitingApproval
+        // ------------------------------------------------------------
+        var run = await PersistWorkflowRunAsync(eventId, plan, cancellationToken);
 
-        return plan;
+        return new WorkflowRunStatusDto
+        {
+            RunId = run.Id,
+            EventId = run.EventId,
+            Status = run.Status,
+            Objective = run.PromptObjective,
+            CreatedAt = run.CreatedAt
+        };
     }
 
     // ============================================================
-    // Private helpers
+    // GET — full run details
     // ============================================================
-    private async Task PersistWorkflowRunAsync(
+    public async Task<WorkflowRunDetailDto?> GetRunAsync(Guid runId, CancellationToken cancellationToken = default)
+    {
+        var run = await _db.AgentWorkflowRuns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        return run is null ? null : MapRunToDto(run);
+    }
+
+    // ============================================================
+    // APPROVE — AwaitingApproval → Approved
+    // ============================================================
+    public async Task<WorkflowRunDetailDto?> ApproveAsync(Guid runId, Guid reviewedByUserId, CancellationToken cancellationToken = default)
+    {
+        var run = await _db.AgentWorkflowRuns
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        if (run is null)
+            return null;
+
+        if (run.Status != "AwaitingApproval")
+            throw new InvalidOperationException(
+                $"Cannot approve a run in '{run.Status}' status. Only 'AwaitingApproval' runs can be approved.");
+
+        run.Status = "Approved";
+        run.ReviewedByUserId = reviewedByUserId;
+        run.ReviewNotes = "Approved by organizer.";
+        run.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Workflow run {RunId} approved by user {UserId}", runId, reviewedByUserId);
+
+        return MapRunToDto(run);
+    }
+
+    // ============================================================
+    // REJECT — AwaitingApproval → Rejected (with reason)
+    // ============================================================
+    public async Task<WorkflowRunDetailDto?> RejectAsync(Guid runId, Guid reviewedByUserId, string reason, CancellationToken cancellationToken = default)
+    {
+        var run = await _db.AgentWorkflowRuns
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        if (run is null)
+            return null;
+
+        if (run.Status != "AwaitingApproval")
+            throw new InvalidOperationException(
+                $"Cannot reject a run in '{run.Status}' status. Only 'AwaitingApproval' runs can be rejected.");
+
+        run.Status = "Rejected";
+        run.ReviewedByUserId = reviewedByUserId;
+        run.ReviewNotes = reason;
+        run.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Workflow run {RunId} rejected by user {UserId}: {Reason}", runId, reviewedByUserId, reason);
+
+        return MapRunToDto(run);
+    }
+
+    // ============================================================
+    // PRIVATE HELPERS
+    // ============================================================
+    private async Task<AgentWorkflowRun> PersistWorkflowRunAsync(
         Guid eventId,
         PlanResultDto plan,
         CancellationToken cancellationToken)
     {
-        // Find an organizer of this event to attribute the run to.
-        // (Later this will come from the JWT-authenticated user.)
         var organizerId = await _db.Events
             .Where(e => e.Id == eventId)
             .Select(e => (Guid?)e.OrganizerId)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (organizerId is null)
-        {
-            _logger.LogWarning("Cannot persist workflow run: event {EventId} not found", eventId);
-            return;
-        }
+            throw new InvalidOperationException($"Event '{eventId}' not found when persisting workflow run.");
 
         var planJson = JsonSerializer.Serialize(plan);
 
@@ -123,15 +193,13 @@ public class AgentService : IAgentService
             Id = Guid.NewGuid(),
             EventId = eventId,
             InitiatedByUserId = organizerId.Value,
-            Status = "Running",
+            Status = "AwaitingApproval",     // ← paused for human approval
             PromptObjective = plan.Objective,
             PlanSummary = planJson,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        // Add tool logs via the navigation property so EF Core orders
-        // the INSERT correctly (parent first, then children).
         foreach (var call in plan.ToolCalls)
         {
             run.ToolLogs.Add(new AgentToolLog
@@ -152,5 +220,21 @@ public class AgentService : IAgentService
         _logger.LogInformation(
             "Persisted workflow run {RunId} with {Count} tool log entries for event {EventId}",
             run.Id, run.ToolLogs.Count, eventId);
+
+        return run;
     }
+
+    private static WorkflowRunDetailDto MapRunToDto(AgentWorkflowRun run) => new()
+    {
+        RunId = run.Id,
+        EventId = run.EventId,
+        InitiatedByUserId = run.InitiatedByUserId,
+        Status = run.Status,
+        Objective = run.PromptObjective,
+        PlanSummary = run.PlanSummary,
+        ReviewedByUserId = run.ReviewedByUserId,
+        ReviewNotes = run.ReviewNotes,
+        CreatedAt = run.CreatedAt,
+        UpdatedAt = run.UpdatedAt
+    };
 }

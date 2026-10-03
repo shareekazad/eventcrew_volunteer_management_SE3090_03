@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend:
+    name: Backend (.NET)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore EventCrew.sln
+
+      - name: Build
+        run: dotnet build EventCrew.sln --no-restore --configuration Release
+
+      - name: Run tests
+        run: dotnet test tests/EventCrew.Api.Tests --no-build --configuration Release --verbosity normal
+
+  ai-service:
+    name: AI Service (Python)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ai-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        run: pytest -v
