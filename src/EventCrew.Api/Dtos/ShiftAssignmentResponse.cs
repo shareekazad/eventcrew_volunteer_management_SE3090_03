@@ -14,3 +14,19 @@ public sealed record ShiftAssignmentResponse(
     DateTimeOffset AssignedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+/// <summary>Assignments and volunteer profile ID for the signed-in volunteer.</summary>
+public sealed record VolunteerAssignmentsResponse(
+    Guid VolunteerId,
+    IReadOnlyList<MyShiftAssignmentResponse> Assignments);
+
+/// <summary>Minimal assignment details used by the volunteer mobile experience.</summary>
+public sealed record MyShiftAssignmentResponse(
+    Guid AssignmentId,
+    Guid ShiftId,
+    string Title,
+    string EventName,
+    string RoleRequirementName,
+    DateTimeOffset StartTime,
+    DateTimeOffset EndTime,
+    string Status);

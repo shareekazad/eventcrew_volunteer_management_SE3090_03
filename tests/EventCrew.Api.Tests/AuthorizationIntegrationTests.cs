@@ -243,6 +243,7 @@ public sealed class AuthorizationIntegrationTests
         AssertActionRole<VenuesController>(nameof(VenuesController.Delete), AuthorizationRoles.AdminOrOrganizer);
         AssertControllerRole<RoleRequirementController>(AuthorizationRoles.All);
         AssertControllerRole<ShiftController>(AuthorizationRoles.All);
+        AssertActionRole<ShiftController>(nameof(ShiftController.GetMyAssignments), AuthorizationRoles.Volunteer);
         AssertActionRole<ShiftController>(nameof(ShiftController.Create), AuthorizationRoles.AdminOrOrganizer);
         AssertActionRole<ShiftController>(nameof(ShiftController.Update), AuthorizationRoles.AdminOrOrganizer);
         AssertActionRole<ShiftController>(nameof(ShiftController.Delete), AuthorizationRoles.AdminOrOrganizer);

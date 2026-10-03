@@ -10,6 +10,109 @@ namespace EventCrew.Api.Tests;
 public class ShiftControllerRelationshipTests
 {
     [Fact]
+    public async Task MyAssignmentsReturnsOnlyTheCurrentVolunteersConfirmedAssignments()
+    {
+        var options = new DbContextOptionsBuilder<EventCrewDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var context = new EventCrewDbContext(options);
+        var volunteerUser = new User
+        {
+            Id = Guid.NewGuid(),
+            FullName = "Volunteer",
+            Email = "volunteer@test.com",
+            Role = AuthorizationRoles.Volunteer
+        };
+        var otherUser = new User
+        {
+            Id = Guid.NewGuid(),
+            FullName = "Other Volunteer",
+            Email = "other@test.com",
+            Role = AuthorizationRoles.Volunteer
+        };
+        var organizer = new User
+        {
+            Id = Guid.NewGuid(),
+            FullName = "Organizer",
+            Email = "organizer@test.com",
+            Role = AuthorizationRoles.Organizer
+        };
+        var volunteer = new VolunteerProfile
+        {
+            Id = Guid.NewGuid(),
+            UserId = volunteerUser.Id,
+            User = volunteerUser
+        };
+        var otherVolunteer = new VolunteerProfile
+        {
+            Id = Guid.NewGuid(),
+            UserId = otherUser.Id,
+            User = otherUser
+        };
+        var eventEntity = new Event
+        {
+            Id = Guid.NewGuid(),
+            OrganizerId = organizer.Id,
+            Title = "Community Festival",
+            Category = "Community"
+        };
+        var roleRequirement = new RoleRequirement
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventEntity.Id,
+            RoleName = "Guest Services",
+            RequiredHeadcount = 4
+        };
+        var shift = new Shift
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventEntity.Id,
+            RoleRequirementId = roleRequirement.Id,
+            Title = "Welcome Desk",
+            StartTime = DateTimeOffset.Parse("2026-10-05T09:00:00Z"),
+            EndTime = DateTimeOffset.Parse("2026-10-05T12:00:00Z"),
+            Capacity = 4,
+            Status = "Scheduled"
+        };
+        var ownAssignment = new ShiftAssignment
+        {
+            Id = Guid.NewGuid(),
+            ShiftId = shift.Id,
+            VolunteerId = volunteer.Id,
+            Status = "Confirmed"
+        };
+        var otherAssignment = new ShiftAssignment
+        {
+            Id = Guid.NewGuid(),
+            ShiftId = shift.Id,
+            VolunteerId = otherVolunteer.Id,
+            Status = "Confirmed"
+        };
+        context.Users.AddRange(volunteerUser, otherUser, organizer);
+        context.VolunteerProfiles.AddRange(volunteer, otherVolunteer);
+        context.Events.Add(eventEntity);
+        context.RoleRequirements.Add(roleRequirement);
+        context.Shifts.Add(shift);
+        context.ShiftAssignments.AddRange(ownAssignment, otherAssignment);
+        await context.SaveChangesAsync();
+
+        var controller = ControllerTestAuth.AsUser(
+            new ShiftController(context),
+            volunteerUser.Id,
+            AuthorizationRoles.Volunteer);
+        var result = await controller.GetMyAssignments(CancellationToken.None);
+
+        var response = Assert.IsType<VolunteerAssignmentsResponse>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(volunteer.Id, response.VolunteerId);
+        var assignment = Assert.Single(response.Assignments);
+        Assert.Equal(ownAssignment.Id, assignment.AssignmentId);
+        Assert.Equal(shift.Id, assignment.ShiftId);
+        Assert.Equal("Guest Services", assignment.RoleRequirementName);
+        Assert.Equal("Confirmed", assignment.Status);
+    }
+
+    [Fact]
     public async Task CreateRejectsRequirementOwnedByAnotherEvent()
     {
         var options = new DbContextOptionsBuilder<EventCrewDbContext>()
