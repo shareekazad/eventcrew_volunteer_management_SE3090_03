@@ -8,7 +8,7 @@ namespace EventCrew.Api.Controllers;
 
 [ApiController]
 [Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
-[Route("api/events")]
+[Route("api/events-lookup")]
 [Produces("application/json")]
 public sealed class EventController(EventCrewDbContext dbContext) : ControllerBase
 {

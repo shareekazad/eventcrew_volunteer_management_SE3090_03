@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import AssignmentManagementPage from './pages/organizer/AssignmentManagementPage'
 import ShiftManagementPage from './pages/organizer/ShiftManagementPage'
 import AttendanceManagementPage from './pages/organizer/AttendanceManagementPage'
+import ShiftSwapsPage from './pages/organizer/ShiftSwapsPage'
 import LoginPage from './pages/LoginPage'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/useAuth'
@@ -26,15 +27,24 @@ function AppContent() {
   if (!user) return <LoginPage />
   const page = activePage === 'login' ? 'shifts' : activePage
   return <>
-    {page === 'assignments' ? <AssignmentManagementPage /> : page === 'attendance' ? <AttendanceManagementPage /> : <ShiftManagementPage />}
+    {page === 'assignments' ? (
+      <AssignmentManagementPage />
+    ) : page === 'attendance' ? (
+      <AttendanceManagementPage />
+    ) : page === 'swaps' ? (
+      <ShiftSwapsPage />
+    ) : (
+      <ShiftManagementPage />
+    )}
     <button className="mobile-logout" type="button" aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={17} /></button>
   </>
 }
 
-function getPage(hash: string): 'shifts' | 'assignments' | 'attendance' | 'login' {
+function getPage(hash: string): 'shifts' | 'assignments' | 'attendance' | 'swaps' | 'login' {
   if (hash === '#login') return 'login'
   if (hash === '#assignments') return 'assignments'
   if (hash === '#attendance') return 'attendance'
+  if (hash === '#swaps') return 'swaps'
   return 'shifts'
 }
 

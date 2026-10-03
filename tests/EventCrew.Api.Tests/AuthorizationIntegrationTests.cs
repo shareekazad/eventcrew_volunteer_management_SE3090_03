@@ -252,6 +252,9 @@ public sealed class AuthorizationIntegrationTests
         AssertActionRole<AttendanceController>(nameof(AttendanceController.CheckIn), AuthorizationRoles.Volunteer);
         AssertActionRole<AttendanceController>(nameof(AttendanceController.CheckOut), AuthorizationRoles.Volunteer);
         AssertControllerRole<QrTokenController>(AuthorizationRoles.AdminOrOrganizer);
+        AssertControllerRole<ShiftSwapController>(AuthorizationRoles.All);
+        AssertActionRole<ShiftSwapController>(nameof(ShiftSwapController.Approve), AuthorizationRoles.AdminOrOrganizer);
+        AssertActionRole<ShiftSwapController>(nameof(ShiftSwapController.RejectByOrganizer), AuthorizationRoles.AdminOrOrganizer);
     }
 
     private static void AssertControllerRole<TController>(string? role)
