@@ -124,6 +124,16 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
             return invalidReference;
         }
 
+        var assignedCount = await dbContext.ShiftAssignments
+            .CountAsync(candidate => candidate.ShiftId == id && (candidate.Status == "Confirmed" || candidate.Status == "Completed"), cancellationToken);
+        if (request.Capacity < assignedCount)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                [nameof(UpdateShiftRequest.Capacity)] = [$"Capacity cannot be reduced below the number of existing assignments ({assignedCount})."]
+            }));
+        }
+
         shift.EventId = request.EventId;
         shift.RoleRequirementId = request.RoleRequirementId;
         shift.Title = request.Title!;

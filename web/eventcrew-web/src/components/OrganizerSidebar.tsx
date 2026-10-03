@@ -1,7 +1,7 @@
-import { CalendarDays, ClipboardList, Clock3, LayoutDashboard, LogOut, Settings, Users, ClipboardCheck } from 'lucide-react'
+import { CalendarDays, ClipboardList, Clock3, LayoutDashboard, LogOut, Settings, Users, ClipboardCheck, ArrowRightLeft } from 'lucide-react'
 import { useAuth } from '../auth/useAuth'
 
-type OrganizerSidebarProps = { activePage: 'shifts' | 'assignments' | 'attendance' }
+type OrganizerSidebarProps = { activePage: 'shifts' | 'assignments' | 'attendance' | 'swaps' }
 
 export default function OrganizerSidebar({ activePage }: OrganizerSidebarProps) {
   const { user, logout } = useAuth()
@@ -15,6 +15,7 @@ export default function OrganizerSidebar({ activePage }: OrganizerSidebarProps) 
         <a href="#events"><CalendarDays size={18} />My events</a>
         <a className={activePage === 'shifts' ? 'active' : undefined} href="#shifts" aria-current={activePage === 'shifts' ? 'page' : undefined}><Clock3 size={18} />Shift management</a>
         <a className={activePage === 'assignments' ? 'active' : undefined} href="#assignments" aria-current={activePage === 'assignments' ? 'page' : undefined}><Users size={18} />Assignments</a>
+        <a className={activePage === 'swaps' ? 'active' : undefined} href="#swaps" aria-current={activePage === 'swaps' ? 'page' : undefined}><ArrowRightLeft size={18} />Shift Swaps</a>
         <a className={activePage === 'attendance' ? 'active' : undefined} href="#attendance" aria-current={activePage === 'attendance' ? 'page' : undefined}><ClipboardCheck size={18} />Attendance</a>
         <a href="#requirements"><ClipboardList size={18} />Requirements</a>
       </nav>
