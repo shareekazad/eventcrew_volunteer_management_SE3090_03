@@ -6,6 +6,10 @@
 # dotenv files
 .env
 
+# Docker compose local override files
+docker-compose.override.yml
+docker-compose.override.yaml
+
 # User-specific files
 *.rsuser
 *.suo

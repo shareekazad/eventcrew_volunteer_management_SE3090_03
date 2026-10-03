@@ -14,7 +14,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // ── Authentication (JWT Bearer) ──────────────────────────────────────────────
 var jwtKey     = builder.Configuration["Jwt:Key"]
-                    ?? throw new InvalidOperationException("Jwt:Key is not configured.");
+                    ?? Environment.GetEnvironmentVariable("JWT_KEY")
+                    ?? "DevFallbackSecretKeyForLocalTestingOnly12345!";
+if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey == "SET_VIA_ENV_VAR_OR_SECRET")
+{
+    jwtKey = Environment.GetEnvironmentVariable("JWT_KEY")
+             ?? "DevFallbackSecretKeyForLocalTestingOnly12345!";
+}
 var jwtIssuer  = builder.Configuration["Jwt:Issuer"]   ?? "EventCrew";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "EventCrewUsers";
 
