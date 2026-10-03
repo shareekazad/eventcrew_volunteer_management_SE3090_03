@@ -15,6 +15,7 @@ public sealed class AuthController(
     IPasswordService passwordService,
     IJwtTokenService jwtTokenService) : ControllerBase
 {
+    [AllowAnonymous]
     [HttpPost("login")]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

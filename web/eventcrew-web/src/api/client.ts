@@ -1,4 +1,7 @@
 import axios, { isAxiosError } from 'axios'
+import { clearAccessToken, getAccessToken } from '../auth/tokenStorage'
+
+export const AUTH_SESSION_EXPIRED_EVENT = 'eventcrew:auth-session-expired'
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5100'
 
@@ -6,6 +9,23 @@ export const apiClient = axios.create({
   baseURL: import.meta.env.DEV ? '/api' : configuredApiBaseUrl,
   headers: { 'Content-Type': 'application/json' },
 })
+
+apiClient.interceptors.request.use((config) => {
+  const token = getAccessToken()
+  if (token) config.headers.set('Authorization', `Bearer ${token}`)
+  return config
+})
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (isAxiosError(error) && error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
+      clearAccessToken()
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT))
+    }
+    return Promise.reject(error)
+  },
+)
 
 type ProblemDetails = {
   title?: string

@@ -17,7 +17,7 @@ public class AssignmentControllerTests
         var data = await SeedShiftAsync(context, capacity: 2);
         var volunteer = await AddVolunteerAsync(context, data, "Accepted", data.Requirement.Id);
 
-        var result = await new AssignmentController(context).Create(
+        var result = await AssignmentControllerFor(context, data).Create(
             new CreateShiftAssignmentRequest { ShiftId = data.Shift.Id, VolunteerId = volunteer.Id },
             CancellationToken.None);
 
@@ -38,7 +38,7 @@ public class AssignmentControllerTests
         context.ShiftAssignments.Add(CreateAssignment(data.Shift.Id, volunteer.Id));
         await context.SaveChangesAsync();
 
-        var result = await new AssignmentController(context).Create(
+        var result = await AssignmentControllerFor(context, data).Create(
             new CreateShiftAssignmentRequest { ShiftId = data.Shift.Id, VolunteerId = volunteer.Id },
             CancellationToken.None);
 
@@ -57,7 +57,7 @@ public class AssignmentControllerTests
         context.ShiftAssignments.Add(CreateAssignment(data.Shift.Id, assigned.Id));
         await context.SaveChangesAsync();
 
-        var result = await new AssignmentController(context).Create(
+        var result = await AssignmentControllerFor(context, data).Create(
             new CreateShiftAssignmentRequest { ShiftId = data.Shift.Id, VolunteerId = candidate.Id },
             CancellationToken.None);
 
@@ -73,7 +73,7 @@ public class AssignmentControllerTests
         var data = await SeedShiftAsync(context, capacity: 2);
         var volunteer = await AddVolunteerAsync(context, data, "Rejected", data.Requirement.Id);
 
-        var result = await new AssignmentController(context).Create(
+        var result = await AssignmentControllerFor(context, data).Create(
             new CreateShiftAssignmentRequest { ShiftId = data.Shift.Id, VolunteerId = volunteer.Id },
             CancellationToken.None);
 
@@ -90,7 +90,7 @@ public class AssignmentControllerTests
         await AddVolunteerAsync(context, data, "Accepted", Guid.NewGuid());
         await AddVolunteerAsync(context, data, "Submitted", data.Requirement.Id);
 
-        var result = await new AssignmentController(context).GetEligibleVolunteers(data.Shift.Id, CancellationToken.None);
+        var result = await AssignmentControllerFor(context, data).GetEligibleVolunteers(data.Shift.Id, CancellationToken.None);
 
         var candidates = Assert.IsType<OkObjectResult>(result.Result).Value as IReadOnlyList<EligibleVolunteerResponse>;
         Assert.NotNull(candidates);
@@ -107,7 +107,7 @@ public class AssignmentControllerTests
         context.ShiftAssignments.Add(CreateAssignment(data.Shift.Id, volunteer.Id));
         await context.SaveChangesAsync();
 
-        var result = await new ShiftController(context).GetAll(CancellationToken.None);
+        var result = await ControllerTestAuth.AsUser(new ShiftController(context), data.Event.OrganizerId, "Organizer").GetAll(CancellationToken.None);
 
         var response = Assert.Single(Assert.IsType<OkObjectResult>(result.Result).Value as IReadOnlyList<ShiftResponse> ?? []);
         Assert.Equal(1, response.AssignedCount);
@@ -125,7 +125,7 @@ public class AssignmentControllerTests
 
     private static async Task<ShiftTestData> SeedShiftAsync(EventCrewDbContext context, int capacity)
     {
-        var eventEntity = new Event { Id = Guid.NewGuid(), Title = "Tech conference" };
+        var eventEntity = new Event { Id = Guid.NewGuid(), OrganizerId = Guid.NewGuid(), Title = "Tech conference" };
         var requirement = new RoleRequirement
         {
             Id = Guid.NewGuid(), EventId = eventEntity.Id, Event = eventEntity,
@@ -178,6 +178,9 @@ public class AssignmentControllerTests
             Status = "Confirmed", AssignedAt = now, CreatedAt = now, UpdatedAt = now
         };
     }
+
+    private static AssignmentController AssignmentControllerFor(EventCrewDbContext context, ShiftTestData data) =>
+        ControllerTestAuth.AsUser(new AssignmentController(context), data.Event.OrganizerId, "Organizer");
 
     private sealed record ShiftTestData(Event Event, RoleRequirement Requirement, Shift Shift);
 }

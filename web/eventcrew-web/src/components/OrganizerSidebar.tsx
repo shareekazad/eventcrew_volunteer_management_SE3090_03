@@ -1,8 +1,11 @@
-import { CalendarDays, ChevronDown, ClipboardList, Clock3, LayoutDashboard, Settings, Users, ClipboardCheck } from 'lucide-react'
+import { CalendarDays, ClipboardList, Clock3, LayoutDashboard, LogOut, Settings, Users, ClipboardCheck } from 'lucide-react'
+import { useAuth } from '../auth/useAuth'
 
 type OrganizerSidebarProps = { activePage: 'shifts' | 'assignments' | 'attendance' }
 
 export default function OrganizerSidebar({ activePage }: OrganizerSidebarProps) {
+  const { user, logout } = useAuth()
+  const initials = user?.fullName.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase() ?? 'EC'
   return (
     <aside className="sidebar">
       <a className="brand" href="#shifts" aria-label="EventCrew organizer home"><span className="brand-mark"><CalendarDays size={18} /></span><span>eventcrew<span className="brand-period">.</span></span></a>
@@ -15,7 +18,7 @@ export default function OrganizerSidebar({ activePage }: OrganizerSidebarProps) 
         <a className={activePage === 'attendance' ? 'active' : undefined} href="#attendance" aria-current={activePage === 'attendance' ? 'page' : undefined}><ClipboardCheck size={18} />Attendance</a>
         <a href="#requirements"><ClipboardList size={18} />Requirements</a>
       </nav>
-      <div className="sidebar-bottom"><a href="#settings"><Settings size={18} />Settings</a><div className="organizer-profile"><div className="avatar">JM</div><div><strong>Jordan Miller</strong><span>Event organizer</span></div><ChevronDown size={15} /></div></div>
+      <div className="sidebar-bottom"><a href="#settings"><Settings size={18} />Settings</a><div className="organizer-profile"><div className="avatar">{initials}</div><div><strong>{user?.fullName}</strong><span>{user?.role}</span></div><button className="sidebar-logout" type="button" aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={17} /></button></div></div>
     </aside>
   )
 }

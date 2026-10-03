@@ -257,3 +257,30 @@ h1 { margin-bottom: 6px; font-family: Manrope, sans-serif; font-size: 29px; line
   .attendance-table-section { padding: 15px 12px 0; }
   .attendance-table { min-width: 690px; }
 }
+
+/* Frontend authentication */
+.auth-screen { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: radial-gradient(ellipse at top left, #e7f3ed 0, #f5f7f6 58%); }
+.auth-card { width: min(420px, 100%); padding: 34px; border: 1px solid #e5ece8; border-radius: 10px; background: white; box-shadow: 0 18px 55px #173f3a12; }
+.auth-brand { display: flex; align-items: center; gap: 8px; margin-bottom: 34px; color: #244740; font: 800 20px Manrope, sans-serif; }
+.auth-brand .brand-period { margin-left: -8px; }
+.auth-card .eyebrow { margin-bottom: 7px; }
+.auth-card h1 { margin: 0 0 7px; font-size: 27px; }
+.auth-subtitle { margin: 0 0 23px; color: #778583; font-size: 12px; }
+.auth-form { display: grid; gap: 15px; }
+.auth-form .form-field input { min-height: 42px; }
+.auth-submit { width: 100%; min-height: 42px; margin-top: 3px; }
+.auth-submit:disabled { opacity: .7; cursor: wait; }
+.auth-error { margin: 0; padding: 10px 12px; border: 1px solid #f0d5d2; border-radius: 5px; color: #98413c; background: #fff7f6; font-size: 11px; }
+.auth-loading { display: grid; min-height: 100vh; place-items: center; background: #f5f7f6; }
+.auth-loading .brand-mark { width: 42px; height: 42px; }
+.sidebar-logout { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 5px; color: #c1d5cf; background: transparent; }
+.sidebar-logout:hover { color: white; background: #23534c; }
+.mobile-logout { display: none; }
+@media (max-width: 840px) {
+  .sidebar-logout { width: 42px; height: 38px; }
+  .organizer-profile { flex-wrap: wrap; }
+}
+@media (max-width: 700px) {
+  .auth-card { padding: 27px 22px; }
+  .mobile-logout { position: fixed; right: 60px; top: 12px; z-index: 3; display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; color: #315d54; background: #e5f0ea; }
+}

@@ -2,6 +2,7 @@ using System.Data;
 using EventCrew.Api.Dtos;
 using EventCrew.Domain.Entities;
 using EventCrew.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -9,6 +10,7 @@ using Npgsql;
 namespace EventCrew.Api.Controllers;
 
 [ApiController]
+[Authorize(Roles = AuthorizationRoles.AdminOrOrganizer)]
 [Route("api/assignments")]
 [Produces("application/json")]
 public sealed class AssignmentController(EventCrewDbContext dbContext) : ControllerBase
@@ -38,7 +40,7 @@ public sealed class AssignmentController(EventCrewDbContext dbContext) : Control
             });
         }
 
-        var assignments = dbContext.ShiftAssignments.AsNoTracking();
+        var assignments = ScopeToOwnedEvents(dbContext.ShiftAssignments.AsNoTracking());
         if (eventId.HasValue) assignments = assignments.Where(assignment => assignment.Shift.EventId == eventId.Value);
         if (shiftId.HasValue) assignments = assignments.Where(assignment => assignment.ShiftId == shiftId.Value);
         if (volunteerId.HasValue) assignments = assignments.Where(assignment => assignment.VolunteerId == volunteerId.Value);
@@ -53,7 +55,7 @@ public sealed class AssignmentController(EventCrewDbContext dbContext) : Control
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ShiftAssignmentResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var assignment = await ProjectAssignments(dbContext.ShiftAssignments.AsNoTracking())
+        var assignment = await ProjectAssignments(ScopeToOwnedEvents(dbContext.ShiftAssignments.AsNoTracking()))
             .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
         return assignment is null ? NotFound(CreateNotFoundProblem("Assignment", id)) : Ok(assignment);
     }
@@ -80,9 +82,10 @@ public sealed class AssignmentController(EventCrewDbContext dbContext) : Control
 
         var shift = await dbContext.Shifts.AsNoTracking()
             .Where(candidate => candidate.Id == shiftId)
-            .Select(candidate => new { candidate.EventId, candidate.RoleRequirementId, candidate.Capacity })
+            .Select(candidate => new { candidate.EventId, candidate.RoleRequirementId, candidate.Capacity, candidate.Event.OrganizerId })
             .SingleOrDefaultAsync(cancellationToken);
         if (shift is null) return NotFound(CreateNotFoundProblem("Shift", shiftId));
+        if (!ResourceOwnership.CanManageEvent(User, shift.OrganizerId)) return NotFound(CreateNotFoundProblem("Shift", shiftId));
 
         var assignedCount = await CountCapacityAssignments(shiftId).CountAsync(cancellationToken);
         if (assignedCount >= shift.Capacity) return Ok(Array.Empty<EligibleVolunteerResponse>());
@@ -118,8 +121,11 @@ public sealed class AssignmentController(EventCrewDbContext dbContext) : Control
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
-            var shift = await dbContext.Shifts.SingleOrDefaultAsync(candidate => candidate.Id == request.ShiftId, cancellationToken);
+            var shift = await dbContext.Shifts.Include(candidate => candidate.Event)
+                .SingleOrDefaultAsync(candidate => candidate.Id == request.ShiftId, cancellationToken);
             if (shift is null) return NotFound(CreateNotFoundProblem("Shift", request.ShiftId));
+            if (!ResourceOwnership.CanManageEvent(User, shift.Event.OrganizerId))
+                return NotFound(CreateNotFoundProblem("Shift", request.ShiftId));
 
             var volunteer = await dbContext.VolunteerProfiles
                 .Include(profile => profile.User)
@@ -193,8 +199,12 @@ public sealed class AssignmentController(EventCrewDbContext dbContext) : Control
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var assignment = await dbContext.ShiftAssignments.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        var assignment = await dbContext.ShiftAssignments
+            .Include(candidate => candidate.Shift).ThenInclude(shift => shift.Event)
+            .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
         if (assignment is null) return NotFound(CreateNotFoundProblem("Assignment", id));
+        if (!ResourceOwnership.CanManageEvent(User, assignment.Shift.Event.OrganizerId))
+            return NotFound(CreateNotFoundProblem("Assignment", id));
 
         dbContext.ShiftAssignments.Remove(assignment);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -215,6 +225,15 @@ public sealed class AssignmentController(EventCrewDbContext dbContext) : Control
             assignment.AssignedAt,
             assignment.CreatedAt,
             assignment.UpdatedAt));
+
+    private IQueryable<ShiftAssignment> ScopeToOwnedEvents(IQueryable<ShiftAssignment> assignments)
+    {
+        if (ResourceOwnership.IsAdmin(User)) return assignments;
+        var organizerId = ResourceOwnership.GetUserId(User);
+        return organizerId.HasValue
+            ? assignments.Where(assignment => assignment.Shift.Event.OrganizerId == organizerId.Value)
+            : assignments.Where(_ => false);
+    }
 
     private IQueryable<ShiftAssignment> CountCapacityAssignments(Guid shiftId) =>
         dbContext.ShiftAssignments.Where(assignment =>

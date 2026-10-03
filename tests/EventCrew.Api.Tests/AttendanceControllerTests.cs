@@ -15,12 +15,12 @@ public class AttendanceControllerTests
     {
         await using var db = CreateContext();
         var data = await SeedAsync(db);
-        var createdToken = Assert.IsType<CreatedAtActionResult>((await new QrTokenController(db).Create(data.Shift.Id, CancellationToken.None)).Result);
+        var createdToken = Assert.IsType<CreatedAtActionResult>((await ControllerTestAuth.AsUser(new QrTokenController(db), data.OrganizerId, "Organizer").Create(data.Shift.Id, CancellationToken.None)).Result);
         var response = Assert.IsType<QrTokenResponse>(createdToken.Value);
         var stored = await db.QrCodeTokens.SingleAsync();
         Assert.NotEqual(response.Token, stored.TokenHash);
         Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(response.Token))), stored.TokenHash);
-        var checkin = await new AttendanceController(db).CheckIn(Request(response.Token, data), CancellationToken.None);
+        var checkin = await VolunteerController(db, data).CheckIn(Request(response.Token, data), CancellationToken.None);
         Assert.IsType<OkObjectResult>(checkin.Result);
         var attendance = await db.AttendanceRecords.SingleAsync();
         Assert.Equal("CheckedIn", attendance.Status);
@@ -33,7 +33,7 @@ public class AttendanceControllerTests
     {
         await using var db = CreateContext();
         var data = await SeedAsync(db);
-        var attendance = new AttendanceController(db);
+        var attendance = VolunteerController(db, data);
         var expired = await AddTokenAsync(db, data.Shift.Id, "expired", DateTimeOffset.UtcNow.AddMinutes(-1));
         Assert.IsType<ConflictObjectResult>((await attendance.CheckIn(Request("expired", data), CancellationToken.None)).Result);
         expired.IsActive = false;
@@ -51,13 +51,19 @@ public class AttendanceControllerTests
     }
 
     [Fact]
-    public async Task CheckInRejectsVolunteerWithoutAssignment()
+    public async Task CheckInRejectsAClientSuppliedDifferentVolunteerIdentity()
     {
         await using var db = CreateContext();
         var data = await SeedAsync(db);
         await AddTokenAsync(db, data.Shift.Id, "valid", DateTimeOffset.UtcNow.AddHours(1));
-        var request = new AttendanceActionRequest { ShiftId = data.Shift.Id, VolunteerId = Guid.NewGuid(), Token = "valid" };
-        Assert.IsType<NotFoundObjectResult>((await new AttendanceController(db).CheckIn(request, CancellationToken.None)).Result);
+        var otherUser = new User { Id = Guid.NewGuid(), FullName = "Other volunteer", Email = "other@example.test", Role = "Volunteer", IsActive = true };
+        var otherProfile = new VolunteerProfile { Id = Guid.NewGuid(), UserId = otherUser.Id, User = otherUser };
+        db.Users.Add(otherUser);
+        db.VolunteerProfiles.Add(otherProfile);
+        await db.SaveChangesAsync();
+        var request = new AttendanceActionRequest { ShiftId = data.Shift.Id, VolunteerId = otherProfile.Id, Token = "valid" };
+        Assert.IsType<ForbidResult>((await VolunteerController(db, data).CheckIn(request, CancellationToken.None)).Result);
+        Assert.Empty(await db.AttendanceRecords.ToListAsync());
     }
 
     [Fact]
@@ -66,7 +72,7 @@ public class AttendanceControllerTests
         await using var db = CreateContext();
         var data = await SeedAsync(db);
         await AddTokenAsync(db, data.Shift.Id, "valid", DateTimeOffset.UtcNow.AddHours(1));
-        var controller = new AttendanceController(db);
+        var controller = VolunteerController(db, data);
         var request = Request("valid", data);
         Assert.IsType<NotFoundObjectResult>((await controller.CheckOut(request, CancellationToken.None)).Result);
         await controller.CheckIn(request, CancellationToken.None);
@@ -86,7 +92,7 @@ public class AttendanceControllerTests
         var record = new AttendanceRecord { Id = Guid.NewGuid(), ShiftAssignmentId = data.Assignment.Id, ShiftAssignment = data.Assignment, CheckInTime = now, Status = "CheckedIn", CreatedAt = now, UpdatedAt = now };
         db.AttendanceRecords.Add(record);
         await db.SaveChangesAsync();
-        var controller = new AttendanceController(db);
+        var controller = ControllerTestAuth.AsUser(new AttendanceController(db), data.OrganizerId, "Organizer");
         var byShift = Assert.IsType<OkObjectResult>((await controller.GetByShift(data.Shift.Id, CancellationToken.None)).Result).Value as IReadOnlyList<AttendanceResponse>;
         Assert.Single(byShift!);
         Assert.Equal(data.Volunteer.Id, byShift![0].VolunteerId);
@@ -110,7 +116,8 @@ public class AttendanceControllerTests
     private static async Task<SeedData> SeedAsync(EventCrewDbContext db)
     {
         var now = DateTimeOffset.UtcNow;
-        var ev = new Event { Id = Guid.NewGuid(), Title = "Event" };
+        var organizerId = Guid.NewGuid();
+        var ev = new Event { Id = Guid.NewGuid(), OrganizerId = organizerId, Title = "Event" };
         var requirement = new RoleRequirement { Id = Guid.NewGuid(), EventId = ev.Id, Event = ev, RoleName = "Guide", RequiredHeadcount = 1 };
         var shift = new Shift { Id = Guid.NewGuid(), EventId = ev.Id, RoleRequirementId = requirement.Id, Event = ev, RoleRequirement = requirement, Title = "Morning", StartTime = now.AddHours(1), EndTime = now.AddHours(2), Capacity = 1, Status = "Scheduled", CreatedAt = now, UpdatedAt = now };
         var user = new User { Id = Guid.NewGuid(), FullName = "Ada Volunteer", Email = "ada@example.test", Role = "Volunteer", IsActive = true };
@@ -118,8 +125,11 @@ public class AttendanceControllerTests
         var assignment = new ShiftAssignment { Id = Guid.NewGuid(), ShiftId = shift.Id, Shift = shift, VolunteerId = volunteer.Id, Volunteer = volunteer, Status = "Confirmed", AssignedAt = now, CreatedAt = now, UpdatedAt = now };
         db.Events.Add(ev); db.RoleRequirements.Add(requirement); db.Shifts.Add(shift); db.Users.Add(user); db.VolunteerProfiles.Add(volunteer); db.ShiftAssignments.Add(assignment);
         await db.SaveChangesAsync();
-        return new SeedData(shift, volunteer, assignment);
+        return new SeedData(shift, volunteer, assignment, organizerId);
     }
 
-    private sealed record SeedData(Shift Shift, VolunteerProfile Volunteer, ShiftAssignment Assignment);
+    private static AttendanceController VolunteerController(EventCrewDbContext db, SeedData data) =>
+        ControllerTestAuth.AsUser(new AttendanceController(db), data.Volunteer.UserId, "Volunteer");
+
+    private sealed record SeedData(Shift Shift, VolunteerProfile Volunteer, ShiftAssignment Assignment, Guid OrganizerId);
 }
