@@ -35,6 +35,63 @@ public sealed class ShiftController(EventCrewDbContext dbContext) : ControllerBa
         return Ok(shifts);
     }
 
+    /// <summary>Gets shifts assigned to the authenticated volunteer.</summary>
+    [HttpGet("my-shifts")]
+    [ProducesResponseType(typeof(IReadOnlyList<ShiftResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<ShiftResponse>>> GetMyShifts(CancellationToken cancellationToken)
+    {
+        var userId = ResourceOwnership.GetUserId(User);
+        if (userId is null) return Unauthorized();
+
+        var shifts = await ProjectShifts(dbContext.Shifts.AsNoTracking()
+            .Where(shift => shift.Assignments.Any(a => a.Volunteer.UserId == userId.Value && (a.Status == "Confirmed" || a.Status == "Completed"))))
+            .OrderBy(shift => shift.StartTime)
+            .ThenBy(shift => shift.Id)
+            .ToListAsync(cancellationToken);
+
+        return Ok(shifts);
+    }
+
+    /// <summary>Gets current and completed assignments owned by the authenticated volunteer.</summary>
+    [Authorize(Roles = AuthorizationRoles.Volunteer)]
+    [HttpGet("my-assignments")]
+    [ProducesResponseType(typeof(VolunteerAssignmentsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<VolunteerAssignmentsResponse>> GetMyAssignments(
+        CancellationToken cancellationToken)
+    {
+        var userId = ResourceOwnership.GetUserId(User);
+        if (userId is null) return Unauthorized();
+
+        var volunteer = await dbContext.VolunteerProfiles.AsNoTracking()
+            .SingleOrDefaultAsync(profile => profile.UserId == userId.Value, cancellationToken);
+        if (volunteer is null)
+        {
+            return NotFound(CreateNotFoundProblem("Volunteer profile", userId.Value));
+        }
+
+        var assignments = await dbContext.ShiftAssignments.AsNoTracking()
+            .Where(assignment => assignment.VolunteerId == volunteer.Id &&
+                (assignment.Status == "Confirmed" || assignment.Status == "Completed"))
+            .OrderBy(assignment => assignment.Shift.StartTime)
+            .ThenBy(assignment => assignment.Id)
+            .Select(assignment => new MyShiftAssignmentResponse(
+                assignment.Id,
+                assignment.ShiftId,
+                assignment.Shift.Title,
+                assignment.Shift.Event.Title,
+                assignment.Shift.RoleRequirement.RoleName,
+                assignment.Shift.StartTime,
+                assignment.Shift.EndTime,
+                assignment.Status))
+            .ToListAsync(cancellationToken);
+
+        return Ok(new VolunteerAssignmentsResponse(volunteer.Id, assignments));
+    }
+
     /// <summary>Gets a shift by its identifier.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ShiftResponse), StatusCodes.Status200OK)]

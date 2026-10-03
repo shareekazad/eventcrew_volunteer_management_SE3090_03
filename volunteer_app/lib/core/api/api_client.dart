@@ -1,102 +1,136 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 
 /// Thrown when an API request fails.
 class ApiException implements Exception {
+  const ApiException(this.message, {this.statusCode});
+
   final int? statusCode;
   final String message;
 
-  ApiException(this.message, {this.statusCode});
-
   @override
-  String toString() => 'ApiException(${statusCode ?? 'network'}): $message';
+  String toString() => message;
 }
 
-/// Thin HTTP client for talking to the EventCrew ASP.NET Core API.
-///
-/// Responsibilities:
-/// - Attach common headers (JSON)
-/// - Enforce a timeout
-/// - Translate HTTP errors into typed exceptions
-/// - Decode JSON responses
-///
-/// The client is intentionally stateless — no auth token yet.
-/// When JWT auth lands, this is where the Authorization header will be added.
+/// Centralized HTTP client for the EventCrew ASP.NET Core API.
 class ApiClient {
-  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+  static final ApiClient _shared = ApiClient._();
+
+  factory ApiClient({http.Client? client, String? authToken}) {
+    if (client == null && authToken == null) return _shared;
+    return ApiClient._(client: client, authToken: authToken);
+  }
+
+  ApiClient._({http.Client? client, this.authToken})
+    : _client = client ?? http.Client();
 
   final http.Client _client;
+  String? authToken;
+  Future<void> Function()? onUnauthorized;
 
-  /// GET request. Returns a decoded JSON map or list.
-  Future<dynamic> get(String path) async {
-    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+  Future<dynamic> get(String path) => _send('GET', path);
+
+  Future<dynamic> post(String path, {Object? body}) =>
+      _send('POST', path, body: body);
+
+  Future<dynamic> put(String path, {Object? body}) =>
+      _send('PUT', path, body: body);
+
+  Future<dynamic> delete(String path) => _send('DELETE', path);
+
+  Future<dynamic> _send(String method, String path, {Object? body}) async {
+    final relativePath = path.startsWith('/') ? path.substring(1) : path;
+    final uri = Uri.parse(ApiConfig.baseUrl).resolve(relativePath);
+    final request = http.Request(method, uri)
+      ..headers.addAll(_headers(hasBody: body != null));
+    if (body != null) request.body = jsonEncode(body);
 
     try {
-      final response = await _client
-          .get(uri, headers: _headers)
+      final streamedResponse = await _client
+          .send(request)
           .timeout(ApiConfig.requestTimeout);
-
-      return _handleResponse(response);
+      final response = await http.Response.fromStream(streamedResponse)
+          .timeout(ApiConfig.requestTimeout);
+      return await _handleResponse(response);
     } on TimeoutException {
-      throw ApiException('Request timed out. Is the API running?');
-    } on http.ClientException catch (e) {
-      throw ApiException('Network error: ${e.message}');
+      throw const ApiException(
+        'The request timed out. Check your connection and try again.',
+      );
+    } on http.ClientException catch (error) {
+      throw ApiException('Network error: ${error.message}');
     }
   }
 
-  /// POST request with an optional JSON body.
-  Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
-    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
-
-    try {
-      final response = await _client
-          .post(
-            uri,
-            headers: _headers,
-            body: body == null ? null : jsonEncode(body),
-          )
-          .timeout(ApiConfig.requestTimeout);
-
-      return _handleResponse(response);
-    } on TimeoutException {
-      throw ApiException('Request timed out. Is the API running?');
-    } on http.ClientException catch (e) {
-      throw ApiException('Network error: ${e.message}');
-    }
-  }
-
-  /// Common headers for every request.
-  static const Map<String, String> _headers = {
-    'Content-Type': 'application/json',
+  Map<String, String> _headers({required bool hasBody}) => {
     'Accept': 'application/json',
+    if (hasBody) 'Content-Type': 'application/json; charset=utf-8',
+    if (authToken != null && authToken!.isNotEmpty)
+      'Authorization': 'Bearer ${authToken!}',
   };
 
-  /// Validates the response and returns decoded JSON.
-  dynamic _handleResponse(http.Response response) {
+  Future<dynamic> _handleResponse(http.Response response) async {
     final body = response.body;
-
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (body.isEmpty) return null;
-      return jsonDecode(body);
-    }
-
-    // Try to extract a server error message
-    String message = 'HTTP ${response.statusCode}';
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is Map && decoded['error'] is String) {
-        message = decoded['error'] as String;
+      try {
+        return jsonDecode(body);
+      } on FormatException {
+        throw const ApiException(
+          'The server returned an invalid JSON response.',
+        );
       }
-    } catch (_) {
-      // fall through with the default message
     }
 
+    final message = _errorMessage(response.statusCode, body);
+    if (response.statusCode == 401) {
+      await onUnauthorized?.call();
+    }
     throw ApiException(message, statusCode: response.statusCode);
   }
 
-  /// Cleanup — call when the app shuts down.
+  String _errorMessage(int statusCode, String body) {
+    String? detail;
+    String? title;
+    Map? errors;
+
+    if (body.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(body);
+        if (decoded is Map) {
+          detail = decoded['detail'] as String?;
+          title = decoded['title'] as String?;
+          errors = decoded['errors'] as Map?;
+        }
+      } on FormatException {
+        // Some proxy/server errors are plain text rather than ProblemDetails.
+      }
+    }
+
+    final validationMessages = errors?.values
+        .whereType<List>()
+        .expand((messages) => messages.whereType<String>())
+        .toList();
+    if (validationMessages != null && validationMessages.isNotEmpty) {
+      return validationMessages.join('\n');
+    }
+    if (detail != null && detail.isNotEmpty) return detail;
+    if (title != null && title.isNotEmpty) return title;
+
+    return switch (statusCode) {
+      400 => 'The request was invalid. Check the submitted information.',
+      401 => 'Your session has expired. Please sign in again.',
+      403 => 'You do not have permission to perform this action.',
+      404 => 'The requested item could not be found.',
+      409 =>
+        'The request conflicts with the current data. Refresh and try again.',
+      >= 500 => 'The server encountered an error. Please try again later.',
+      _ => 'The request failed (HTTP $statusCode).',
+    };
+  }
+
   void dispose() => _client.close();
 }
