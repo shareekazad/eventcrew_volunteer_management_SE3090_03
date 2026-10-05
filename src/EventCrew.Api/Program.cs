@@ -1,3 +1,4 @@
+using EventCrew.Api.Configuration;
 using EventCrew.Api.Services;
 using EventCrew.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -18,6 +19,7 @@ if (string.IsNullOrWhiteSpace(jwtKey))
     jwtKey = Environment.GetEnvironmentVariable("JWT_KEY");
 if (string.IsNullOrWhiteSpace(jwtKey))
     jwtKey = "DevFallbackSecretKeyForLocalTestingOnly12345!";
+
 var jwtIssuer   = builder.Configuration["Jwt:Issuer"]   ?? "EventCrew";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "EventCrewUsers";
 
@@ -40,7 +42,7 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
-// ── Application Services ─────────────────────────────────────────────────────
+// ── Application Services ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVenueService, VenueService>();
 builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<IVolunteerService, VolunteerService>();
@@ -53,6 +55,10 @@ builder.Services.AddHttpClient<IAgentService, AgentService>(client =>
     client.Timeout = TimeSpan.FromSeconds(45);
 });
 
+// ── Email service (Resend) ──────────────────────────────────────────────────
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+builder.Services.AddHttpClient<IEmailService, ResendEmailService>();
+
 // ── MVC ─────────────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
 
@@ -62,13 +68,13 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontends", policy =>
     {
         policy
-            .SetIsOriginAllowed(_ => true)      // allow localhost:anyport during dev
+            .SetIsOriginAllowed(_ => true)
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
 
-// ── Swagger / OpenAPI ────────────────────────────────────────────────────────
+// ── Swagger / OpenAPI ───────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

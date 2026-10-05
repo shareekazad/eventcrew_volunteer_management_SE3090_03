@@ -10,6 +10,39 @@ public class EventServiceTests
     // ============================================================
     // Helpers
     // ============================================================
+
+    /// <summary>
+    /// No-op email service for tests. Never sends anything; always returns true.
+    /// Prevents tests from hitting the real Resend API.
+    /// </summary>
+    private sealed class NoOpEmailService : IEmailService
+    {
+        public Task<bool> SendAsync(
+            string toAddress,
+            string subject,
+            string htmlBody,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> SendEventPublishedAsync(
+            string toAddress,
+            string eventTitle,
+            DateTimeOffset startDate,
+            string? venueName,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> SendPlanApprovedAsync(
+            string toAddress,
+            string eventTitle,
+            Guid workflowRunId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+    }
+
+    private static EventService CreateService(Infrastructure.Data.AppDbContext db)
+        => new EventService(db, new NoOpEmailService());
+
     private static async Task<User> AddTestOrganizerAsync(Infrastructure.Data.AppDbContext db)
     {
         var user = new User
@@ -48,7 +81,7 @@ public class EventServiceTests
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
         var venue = await AddTestVenueAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var dto = new CreateEventDto
         {
@@ -83,7 +116,7 @@ public class EventServiceTests
     {
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var dto = new CreateEventDto
         {
@@ -107,7 +140,7 @@ public class EventServiceTests
     public async Task CreateAsync_Throws_WhenOrganizerDoesNotExist()
     {
         using var db = TestDbFactory.Create();
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var dto = new CreateEventDto
         {
@@ -132,7 +165,7 @@ public class EventServiceTests
     {
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var dto = new CreateEventDto
         {
@@ -151,14 +184,14 @@ public class EventServiceTests
     }
 
     // ============================================================
-    // Status transitions — legal
+    // Status transitions — legal path
     // ============================================================
     [Fact]
     public async Task UpdateStatusAsync_AllowsLegalTransition_DraftToPublished()
     {
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
@@ -177,14 +210,14 @@ public class EventServiceTests
     }
 
     // ============================================================
-    // Status transitions — illegal
+    // Status transitions — illegal path
     // ============================================================
     [Fact]
     public async Task UpdateStatusAsync_Throws_OnIllegalTransition_DraftToCompleted()
     {
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
@@ -206,7 +239,7 @@ public class EventServiceTests
     public async Task UpdateStatusAsync_ReturnsNull_WhenEventNotFound()
     {
         using var db = TestDbFactory.Create();
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var result = await service.UpdateStatusAsync(Guid.NewGuid(),
             new UpdateEventStatusDto { NewStatus = "Published" });
@@ -222,7 +255,7 @@ public class EventServiceTests
     {
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
@@ -249,7 +282,7 @@ public class EventServiceTests
     {
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
@@ -281,7 +314,7 @@ public class EventServiceTests
     {
         using var db = TestDbFactory.Create();
         var organizer = await AddTestOrganizerAsync(db);
-        var service = new EventService(db);
+        var service = CreateService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {

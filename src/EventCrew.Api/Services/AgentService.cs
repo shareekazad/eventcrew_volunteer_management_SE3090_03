@@ -14,7 +14,7 @@ namespace EventCrew.Api.Services;
 /// 1. Call the Python AI service — single-agent (/agent/plan) or
 ///    full 4-agent workflow (/workflow/plan).
 /// 2. Persist workflow runs and every tool call as an audit trail.
-/// 3. Manage human approval: approve / reject with audit info.
+/// 3. Manage human approval: approve / reject with audit info + email.
 /// 4. Return structured DTOs to the controller.
 /// </summary>
 public class AgentService : IAgentService
@@ -22,17 +22,23 @@ public class AgentService : IAgentService
     private readonly HttpClient _http;
     private readonly AppDbContext _db;
     private readonly ILogger<AgentService> _logger;
+    private readonly IEmailService _email;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    public AgentService(HttpClient http, AppDbContext db, ILogger<AgentService> logger)
+    public AgentService(
+        HttpClient http,
+        AppDbContext db,
+        ILogger<AgentService> logger,
+        IEmailService email)
     {
         _http = http;
         _db = db;
         _logger = logger;
+        _email = email;
     }
 
     // ============================================================
@@ -50,7 +56,6 @@ public class AgentService : IAgentService
         HttpResponseMessage response;
         try
         {
-            // Full 4-agent workflow endpoint
             response = await _http.PostAsync("/workflow/plan", content, cancellationToken);
         }
         catch (HttpRequestException ex)
@@ -82,7 +87,6 @@ public class AgentService : IAgentService
 
         var workflowJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        // Extract objective + trace count for logging
         string objective = "Multi-agent staffing plan";
         int traceCount = 0;
         try
@@ -112,7 +116,7 @@ public class AgentService : IAgentService
             RunId = run.Id,
             EventId = run.EventId,
             Status = run.Status,
-            Objective = run.PromptObjective,   // entity uses PromptObjective
+            Objective = run.PromptObjective,
             CreatedAt = run.CreatedAt
         };
     }
@@ -130,7 +134,7 @@ public class AgentService : IAgentService
     }
 
     // ============================================================
-    // APPROVE — AwaitingApproval → Approved
+    // APPROVE — AwaitingApproval → Approved (with email)
     // ============================================================
     public async Task<WorkflowRunDetailDto?> ApproveAsync(Guid runId, Guid reviewedByUserId, CancellationToken cancellationToken = default)
     {
@@ -152,6 +156,26 @@ public class AgentService : IAgentService
         await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Workflow run {RunId} approved by user {UserId}", runId, reviewedByUserId);
+
+        // ---- Send approval email to the reviewer/organizer ----
+        var organizerEmail = await _db.Users
+            .Where(u => u.Id == reviewedByUserId)
+            .Select(u => u.Email)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var eventTitle = await _db.Events
+            .Where(e => e.Id == run.EventId)
+            .Select(e => e.Title)
+            .FirstOrDefaultAsync(cancellationToken) ?? "your event";
+
+        if (!string.IsNullOrWhiteSpace(organizerEmail))
+        {
+            _ = _email.SendPlanApprovedAsync(
+                organizerEmail,
+                eventTitle,
+                run.Id,
+                CancellationToken.None);
+        }
 
         return MapRunToDto(run);
     }
@@ -232,7 +256,7 @@ public class AgentService : IAgentService
             EventId = request.EventId,
             InitiatedByUserId = initiatedByUserId,
             Status = "Completed",
-            PromptObjective = $"Match volunteers for role '{request.RoleName}' (headcount: {request.RequiredHeadcount})",  // entity field
+            PromptObjective = $"Match volunteers for role '{request.RoleName}' (headcount: {request.RequiredHeadcount})",
             GeneratedRosterProposal = JsonSerializer.Serialize(matchingResult, JsonOptions),
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -333,9 +357,6 @@ public class AgentService : IAgentService
     // PRIVATE HELPERS
     // ============================================================
 
-    /// <summary>
-    /// Persists the full workflow run + every agent trace as audit rows.
-    /// </summary>
     private async Task<AgentWorkflowRun> PersistWorkflowRunAsync(
         Guid eventId,
         string workflowJson,
@@ -350,7 +371,6 @@ public class AgentService : IAgentService
         if (organizerId is null)
             throw new InvalidOperationException($"Event '{eventId}' not found when persisting workflow run.");
 
-        // Extract agent traces for individual tool log rows
         var traces = new List<JsonElement>();
         try
         {
@@ -372,13 +392,12 @@ public class AgentService : IAgentService
             EventId = eventId,
             InitiatedByUserId = organizerId.Value,
             Status = "AwaitingApproval",
-            PromptObjective = objective,   // entity field
-            PlanSummary = workflowJson,     // full multi-agent workflow state
+            PromptObjective = objective,
+            PlanSummary = workflowJson,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        // One audit row per agent tool call
         foreach (var trace in traces)
         {
             var agentName = trace.TryGetProperty("agent_name", out var a) ? a.GetString() : "Unknown";
@@ -415,7 +434,7 @@ public class AgentService : IAgentService
         EventId = run.EventId,
         InitiatedByUserId = run.InitiatedByUserId,
         Status = run.Status,
-        Objective = run.PromptObjective,   // entity uses PromptObjective
+        Objective = run.PromptObjective,
         PlanSummary = run.PlanSummary,
         ReviewedByUserId = run.ReviewedByUserId,
         ReviewNotes = run.ReviewNotes,
@@ -423,9 +442,6 @@ public class AgentService : IAgentService
         UpdatedAt = run.UpdatedAt
     };
 
-    /// <summary>
-    /// Graceful fallback: returns realistic sample ranked candidates when Python service is offline.
-    /// </summary>
     private static MatchingResponseDto BuildFallbackMatchingResponse(MatchingRequestDto request)
     {
         var skillsRequired = request.RequiredSkills.Count > 0

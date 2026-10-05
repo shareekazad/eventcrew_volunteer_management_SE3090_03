@@ -7,16 +7,14 @@ using Microsoft.EntityFrameworkCore;
 namespace EventCrew.Api.Services;
 
 /// <summary>
-/// Business logic for Event operations, including nested role requirements
-/// and controlled status transitions.
+/// Business logic for Event operations, including nested role requirements,
+/// controlled status transitions, and email notifications.
 /// </summary>
 public class EventService : IEventService
 {
     private readonly AppDbContext _db;
+    private readonly IEmailService _email;
 
-    /// <summary>
-    /// Legal status transitions. Key = current status, Value = allowed next statuses.
-    /// </summary>
     private static readonly Dictionary<EventStatus, EventStatus[]> AllowedTransitions = new()
     {
         [EventStatus.Draft] = new[] { EventStatus.Published, EventStatus.Cancelled },
@@ -27,9 +25,10 @@ public class EventService : IEventService
         [EventStatus.Cancelled] = Array.Empty<EventStatus>()
     };
 
-    public EventService(AppDbContext db)
+    public EventService(AppDbContext db, IEmailService email)
     {
         _db = db;
+        _email = email;
     }
 
     // ============================================================
@@ -96,9 +95,6 @@ public class EventService : IEventService
 
         _db.Events.Add(ev);
 
-        // Add nested role requirements via the navigation collection only.
-        // EF Core cascade-inserts them on SaveChanges. Adding to both the
-        // navigation and the DbSet causes duplicate tracking.
         foreach (var roleInput in dto.RoleRequirements)
         {
             var role = BuildRoleRequirement(roleInput);
@@ -165,7 +161,7 @@ public class EventService : IEventService
     }
 
     // ============================================================
-    // STATUS TRANSITION
+    // STATUS TRANSITION (with email on first Publish)
     // ============================================================
 
     public async Task<EventResponseDto?> UpdateStatusAsync(Guid id, UpdateEventStatusDto dto, CancellationToken cancellationToken = default)
@@ -185,10 +181,40 @@ public class EventService : IEventService
             throw new InvalidOperationException(
                 $"Cannot transition from '{ev.Status}' to '{newStatus}'.");
 
+        var previousStatus = ev.Status;
         ev.Status = newStatus;
         ev.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // ---- Send "event published" email on first transition to Published ----
+        if (previousStatus != EventStatus.Published && newStatus == EventStatus.Published)
+        {
+            var organizerEmail = await _db.Users
+                .Where(u => u.Id == ev.OrganizerId)
+                .Select(u => u.Email)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            string? venueName = null;
+            if (ev.VenueId.HasValue)
+            {
+                venueName = await _db.Venues
+                    .Where(v => v.Id == ev.VenueId.Value)
+                    .Select(v => v.Name)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
+            if (!string.IsNullOrWhiteSpace(organizerEmail))
+            {
+                _ = _email.SendEventPublishedAsync(
+                    organizerEmail,
+                    ev.Title,
+                    ev.StartDate,
+                    venueName,
+                    CancellationToken.None);
+            }
+        }
+
         return MapToDto(ev);
     }
 
