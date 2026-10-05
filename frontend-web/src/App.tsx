@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { ApplicantManagementPage } from './pages/ApplicantManagementPage';
+import { EventWizardPage } from './pages/EventWizardPage';
 import {
   CalendarDays,
   CheckCircle,
   Compass,
   Layers,
   LogOut,
+  Plus,
   Radio,
   Settings,
   Shield,
@@ -13,7 +16,9 @@ import {
 } from 'lucide-react';
 import { DEMO_ORGANIZER_TOKEN } from './services/api';
 
-export const App: React.FC = () => {
+// ---- Inner layout (uses useLocation, so it must be inside BrowserRouter) ----
+const AppShell: React.FC = () => {
+  const location = useLocation();
   const [tokenCopied, setTokenCopied] = useState(false);
 
   const copyToken = () => {
@@ -21,6 +26,8 @@ export const App: React.FC = () => {
     setTokenCopied(true);
     setTimeout(() => setTokenCopied(false), 2000);
   };
+
+  const isWizard = location.pathname.startsWith('/events/new');
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-brand-500 selection:text-white">
@@ -47,8 +54,35 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Active Event Context Badge & User Profile */}
+          {/* Nav + User */}
           <div className="flex items-center space-x-4">
+            {/* Primary navigation */}
+            <nav className="hidden md:flex items-center space-x-1">
+              <Link
+                to="/"
+                className={[
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                  !isWizard
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-slate-600 hover:bg-slate-100',
+                ].join(' ')}
+              >
+                Applications
+              </Link>
+              <Link
+                to="/events/new"
+                className={[
+                  'flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                  isWizard
+                    ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/20'
+                    : 'text-slate-600 hover:bg-slate-100',
+                ].join(' ')}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Create Event
+              </Link>
+            </nav>
+
             <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100/80 border border-slate-200 text-xs text-slate-600">
               <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
               <span>Backend:</span>
@@ -85,7 +119,10 @@ export const App: React.FC = () => {
 
       {/* Main Page Content */}
       <main className="flex-1">
-        <ApplicantManagementPage />
+        <Routes>
+          <Route path="/" element={<ApplicantManagementPage />} />
+          <Route path="/events/new" element={<EventWizardPage />} />
+        </Routes>
       </main>
 
       {/* Footer */}
@@ -94,7 +131,7 @@ export const App: React.FC = () => {
           <div className="flex items-center space-x-2">
             <span className="font-semibold text-slate-700">EventCrew Volunteer Platform</span>
             <span>•</span>
-            <span>SE3090 Module 2 (Student 2: Applications & Profiles)</span>
+            <span>SE3090 • Student 1 (Events) + Student 2 (Applications)</span>
           </div>
           <div className="flex items-center space-x-4">
             <span className="flex items-center gap-1 text-emerald-600 font-medium">
@@ -106,5 +143,14 @@ export const App: React.FC = () => {
         </div>
       </footer>
     </div>
+  );
+};
+
+// ---- Root component ----
+export const App: React.FC = () => {
+  return (
+    <BrowserRouter>
+      <AppShell />
+    </BrowserRouter>
   );
 };

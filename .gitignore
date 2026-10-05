@@ -486,3 +486,31 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# ============================================
+# Flutter / Dart (volunteer_app)
+# ============================================
+volunteer_app/.dart_tool/
+volunteer_app/build/
+volunteer_app/.packages
+volunteer_app/.flutter-plugins
+volunteer_app/.flutter-plugins-dependencies
+volunteer_app/**/GeneratedPluginRegistrant.*
+volunteer_app/**/Generated.xcconfig
+volunteer_app/**/flutter_export_environment.sh
+volunteer_app/**/flutter_native_integration.env
+volunteer_app/**/ephemeral/
+volunteer_app/android/.gradle/
+volunteer_app/android/local.properties
+volunteer_app/android/gradlew
+volunteer_app/android/gradlew.bat
+volunteer_app/android/gradle/wrapper/gradle-wrapper.jar
+volunteer_app/**/*.iml
+volunteer_app/**/.swift_pm.lock
+
+# ============================================
+# Node / React (frontend-web)
+# ============================================
+frontend-web/node_modules/
+frontend-web/dist/
+frontend-web/.vite/
