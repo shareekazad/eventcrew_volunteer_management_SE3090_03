@@ -9,11 +9,17 @@ import {
   Loader2,
   AlertCircle,
   Sparkles,
+  Pencil,
+  Trash2,
+  CheckCircle2,
+  XCircle,
+  PlayCircle,
 } from 'lucide-react';
 
 import { eventService } from '../services/eventService';
 import { agentService } from '../services/agentService';
 import { AIPlanPanel } from '../components/events/AIPlanPanel';
+import { EditEventModal } from '../components/events/EditEventModal';
 import { DEMO_ORGANIZER_TOKEN } from '../services/api';
 import type { EventDto, EventStatus } from '../types/event';
 import type { WorkflowRunDetailDto } from '../types/agent';
@@ -26,6 +32,12 @@ export const EventDetailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isStatusChanging, setIsStatusChanging] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [run, setRun] = useState<WorkflowRunDetailDto | null>(null);
   const [isPlanning, setIsPlanning] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -35,7 +47,9 @@ export const EventDetailPage: React.FC = () => {
 
   const reviewerId = extractReviewerId();
 
-  // ---------- Load event ----------
+  // ------------------------------------------------------------------
+  // Load event
+  // ------------------------------------------------------------------
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -60,17 +74,16 @@ export const EventDetailPage: React.FC = () => {
     };
   }, [id]);
 
-  // ---------- Actions ----------
+  // ------------------------------------------------------------------
+  // Actions
+  // ------------------------------------------------------------------
   const handlePlanStaffing = async () => {
     if (!id) return;
     setIsPlanning(true);
     setPlanError(null);
 
     try {
-      // 1. Trigger the AI workflow
       const status = await agentService.planStaffing(id);
-
-      // 2. Immediately fetch the full run details
       const details = await agentService.getRun(status.runId);
       setRun(details);
     } catch (e) {
@@ -108,7 +121,35 @@ export const EventDetailPage: React.FC = () => {
     }
   };
 
-  // ---------- Render ----------
+  const handleStatusChange = async (newStatus: EventStatus) => {
+    if (!event) return;
+    setIsStatusChanging(true);
+    setStatusError(null);
+    try {
+      const updated = await eventService.updateEventStatus(event.id, newStatus);
+      setEvent(updated);
+    } catch (e) {
+      setStatusError(e instanceof Error ? e.message : 'Status change failed');
+    } finally {
+      setIsStatusChanging(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!event) return;
+    setIsDeleting(true);
+    try {
+      await eventService.deleteEvent(event.id);
+      navigate('/events');
+    } catch (e) {
+      setIsDeleting(false);
+      setStatusError(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------------
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-32 text-slate-500">
@@ -122,9 +163,7 @@ export const EventDetailPage: React.FC = () => {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12 text-center">
         <AlertCircle className="w-12 h-12 mx-auto text-red-500 mb-3" />
-        <h2 className="font-bold text-slate-800 text-lg mb-1">
-          Could not load event
-        </h2>
+        <h2 className="font-bold text-slate-800 text-lg mb-1">Could not load event</h2>
         <p className="text-sm text-slate-500 mb-6">{error ?? 'Event not found'}</p>
         <button
           onClick={() => navigate('/events')}
@@ -141,6 +180,8 @@ export const EventDetailPage: React.FC = () => {
     0
   );
 
+  const allowedTransitions = getAllowedTransitions(event.status);
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Back */}
@@ -155,11 +196,29 @@ export const EventDetailPage: React.FC = () => {
       {/* Header card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 mb-6">
         <div className="flex items-start justify-between mb-4">
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl font-extrabold text-slate-900 mb-2">
               {event.title}
             </h1>
             <EventStatusBadge status={event.status} />
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center space-x-2 ml-4">
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="flex items-center px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1" />
+              Edit
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              Delete
+            </button>
           </div>
         </div>
 
@@ -187,6 +246,33 @@ export const EventDetailPage: React.FC = () => {
             mono={!!event.venueId}
           />
         </div>
+
+        {/* Status transitions */}
+        {allowedTransitions.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-slate-100">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Status Transitions
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {allowedTransitions.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleStatusChange(s)}
+                  disabled={isStatusChanging}
+                  className="flex items-center px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                >
+                  <PlayCircle className="w-3.5 h-3.5 mr-1" />
+                  Move to {s}
+                </button>
+              ))}
+            </div>
+            {statusError && (
+              <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                {statusError}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Roles card */}
@@ -200,9 +286,7 @@ export const EventDetailPage: React.FC = () => {
         </div>
 
         {event.roleRequirements.length === 0 ? (
-          <p className="text-sm text-slate-400 italic">
-            No roles defined yet.
-          </p>
+          <p className="text-sm text-slate-400 italic">No roles defined yet.</p>
         ) : (
           <div className="space-y-2">
             {event.roleRequirements.map((role) => (
@@ -215,9 +299,7 @@ export const EventDetailPage: React.FC = () => {
                     {role.roleName}
                   </div>
                   {role.description && (
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {role.description}
-                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">{role.description}</div>
                   )}
                 </div>
                 <div className="flex items-center text-xs text-slate-600 ml-3 flex-shrink-0">
@@ -239,7 +321,8 @@ export const EventDetailPage: React.FC = () => {
               Generate an AI staffing plan
             </h3>
             <p className="text-sm text-slate-500 mb-5">
-              The PlanningAgent will analyze the event and recommend roles and staffing levels.
+              The multi-agent workflow will analyze the event and recommend roles,
+              candidates, and shifts.
             </p>
             <button
               onClick={handlePlanStaffing}
@@ -255,10 +338,10 @@ export const EventDetailPage: React.FC = () => {
           <div className="rounded-2xl border border-brand-200 bg-white p-8 text-center">
             <Loader2 className="w-8 h-8 mx-auto text-brand-600 animate-spin mb-3" />
             <div className="font-semibold text-slate-800 mb-1">
-              Running the planning workflow...
+              Running the multi-agent workflow...
             </div>
             <div className="text-xs text-slate-500">
-              Calling the LangGraph agent, executing tools, waiting for a plan.
+              Planning → Matching → Scheduling → Validation
             </div>
           </div>
         )}
@@ -281,6 +364,60 @@ export const EventDetailPage: React.FC = () => {
           />
         )}
       </div>
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <EditEventModal
+          event={event}
+          onClose={() => setShowEditModal(false)}
+          onSaved={(updated) => {
+            setEvent(updated);
+            setShowEditModal(false);
+          }}
+        />
+      )}
+
+      {/* Delete Confirm Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center mb-4">
+              <XCircle className="w-6 h-6 text-red-500 mr-3" />
+              <h3 className="font-bold text-slate-900 text-lg">Delete this event?</h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-6">
+              This will permanently delete <strong>{event.title}</strong> and all
+              its role requirements. This cannot be undone.
+            </p>
+            <div className="flex items-center justify-end space-x-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-slate-700 text-sm font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex items-center px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors shadow-sm shadow-red-500/20"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                    Yes, delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -300,9 +437,7 @@ const InfoItem: React.FC<{
       {icon}
       <span className="ml-1.5">{label}</span>
     </div>
-    <div className={`text-sm text-slate-700 ${mono ? 'font-mono' : ''}`}>
-      {value}
-    </div>
+    <div className={`text-sm text-slate-700 ${mono ? 'font-mono' : ''}`}>{value}</div>
   </div>
 );
 
@@ -343,15 +478,31 @@ function formatDate(iso: string): string {
 }
 
 /**
- * Extracts the "sub" claim from the demo JWT for use as the reviewer ID.
- * Temporary — will be replaced by an auth context once JWT is fully wired.
+ * Mirrors the backend's AllowedTransitions dictionary.
+ * Kept in sync with EventService.cs — must match exactly.
  */
+function getAllowedTransitions(current: EventStatus): EventStatus[] {
+  switch (current) {
+    case 'Draft':
+      return ['Published', 'Cancelled'];
+    case 'Published':
+      return ['StaffingInProgress', 'Cancelled'];
+    case 'StaffingInProgress':
+      return ['FullyStaffed', 'Published', 'Cancelled'];
+    case 'FullyStaffed':
+      return ['Completed', 'StaffingInProgress', 'Cancelled'];
+    case 'Completed':
+    case 'Cancelled':
+      return [];
+    default:
+      return [];
+  }
+}
+
 function extractReviewerId(): string {
   try {
     const payload = DEMO_ORGANIZER_TOKEN.split('.')[1];
-    const decoded = JSON.parse(
-      atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
-    );
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
     return decoded.sub as string;
   } catch {
     return 'a0000000-0000-0000-0000-000000000001';
