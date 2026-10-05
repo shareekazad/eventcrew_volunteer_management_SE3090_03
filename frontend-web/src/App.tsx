@@ -2,21 +2,16 @@ import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { ApplicantManagementPage } from './pages/ApplicantManagementPage';
 import { EventWizardPage } from './pages/EventWizardPage';
+import { EventsListPage } from './pages/EventsListPage';
 import {
-  CalendarDays,
   CheckCircle,
-  Compass,
   Layers,
-  LogOut,
   Plus,
   Radio,
-  Settings,
   Shield,
-  Users,
 } from 'lucide-react';
 import { DEMO_ORGANIZER_TOKEN } from './services/api';
 
-// ---- Inner layout (uses useLocation, so it must be inside BrowserRouter) ----
 const AppShell: React.FC = () => {
   const location = useLocation();
   const [tokenCopied, setTokenCopied] = useState(false);
@@ -28,13 +23,15 @@ const AppShell: React.FC = () => {
   };
 
   const isWizard = location.pathname.startsWith('/events/new');
+  const isEventsList = location.pathname === '/events';
+  const isApplications = location.pathname === '/';
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-brand-500 selection:text-white">
       {/* Top Navbar */}
       <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          {/* Logo & Platform Info */}
+          {/* Logo */}
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
               <Layers className="w-5 h-5" />
@@ -49,7 +46,7 @@ const AppShell: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Volunteer Lifecycle & Application Management
+                Volunteer Lifecycle & Event Management
               </p>
             </div>
           </div>
@@ -62,12 +59,23 @@ const AppShell: React.FC = () => {
                 to="/"
                 className={[
                   'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                  !isWizard
+                  isApplications
                     ? 'bg-brand-50 text-brand-700'
                     : 'text-slate-600 hover:bg-slate-100',
                 ].join(' ')}
               >
                 Applications
+              </Link>
+              <Link
+                to="/events"
+                className={[
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                  isEventsList
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-slate-600 hover:bg-slate-100',
+                ].join(' ')}
+              >
+                Events
               </Link>
               <Link
                 to="/events/new"
@@ -100,7 +108,6 @@ const AppShell: React.FC = () => {
               <span>{tokenCopied ? 'JWT Copied!' : 'Copy Organizer JWT'}</span>
             </button>
 
-            {/* Organizer User Badge */}
             <div className="flex items-center space-x-2.5 pl-2 border-l border-slate-200">
               <div className="w-8 h-8 rounded-full bg-brand-600 text-white font-bold text-xs flex items-center justify-center">
                 LO
@@ -117,10 +124,11 @@ const AppShell: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Page Content */}
+      {/* Main content */}
       <main className="flex-1">
         <Routes>
           <Route path="/" element={<ApplicantManagementPage />} />
+          <Route path="/events" element={<EventsListPage />} />
           <Route path="/events/new" element={<EventWizardPage />} />
         </Routes>
       </main>
@@ -146,7 +154,6 @@ const AppShell: React.FC = () => {
   );
 };
 
-// ---- Root component ----
 export const App: React.FC = () => {
   return (
     <BrowserRouter>
