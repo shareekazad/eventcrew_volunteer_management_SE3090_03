@@ -18,8 +18,12 @@ public class AppDbContext : DbContext
     public DbSet<Venue> Venues => Set<Venue>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<RoleRequirement> RoleRequirements => Set<RoleRequirement>();
+    public DbSet<Shift> Shifts => Set<Shift>();
+    public DbSet<VolunteerProfile> VolunteerProfiles => Set<VolunteerProfile>();
+    public DbSet<Application> Applications => Set<Application>();
+    public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
 
-        // ---- Shared AI workflow state ----
+    // ---- Shared AI workflow state ----
     public DbSet<AgentWorkflowRun> AgentWorkflowRuns => Set<AgentWorkflowRun>();
     public DbSet<AgentToolLog> AgentToolLogs => Set<AgentToolLog>();
 

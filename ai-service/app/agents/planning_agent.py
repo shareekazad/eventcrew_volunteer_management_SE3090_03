@@ -35,6 +35,9 @@ class PlanResult(BaseModel):
     reasoning: str
     tool_calls: list[ToolCallLog]
     staffing_recommendations: list[RoleStaffingRecommendation] = Field(default_factory=list)
+    roster: list[dict] = Field(default_factory=list)
+    unfilled_slots: list[dict] = Field(default_factory=list)
+    validation: dict | None = None
     next_agent: str
     status: str = "planned"
 
@@ -50,8 +53,10 @@ class PlanningAgent:
         event_id: str,
         event: EventSummary,
         venue: VenueSummary | None,
+        shifts: list[dict] | None = None,
+        volunteers: list[dict] | None = None,
     ) -> PlanResult:
         # Import here to avoid a cycle: the graph uses PlanResult's models.
         from app.graphs.planning_graph import run_planning_graph
 
-        return await run_planning_graph(event_id, event, venue)
+        return await run_planning_graph(event_id, event, venue, shifts or [], volunteers or [])

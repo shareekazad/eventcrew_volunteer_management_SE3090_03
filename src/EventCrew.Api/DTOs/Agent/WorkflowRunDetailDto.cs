@@ -18,6 +18,16 @@ public class WorkflowRunDetailDto
     /// </summary>
     public string? PlanSummary { get; set; }
 
+    /// <summary>
+    /// The generated roster payload from the AI scheduler, persisted as JSON.
+    /// </summary>
+    public string? GeneratedRosterProposal { get; set; }
+
+    /// <summary>
+    /// The validation payload describing whether the roster meets hard constraints.
+    /// </summary>
+    public string? ValidationReport { get; set; }
+
     public List<WorkflowToolLogDto> ToolLogs { get; set; } = new();
 
     public Guid? ReviewedByUserId { get; set; }

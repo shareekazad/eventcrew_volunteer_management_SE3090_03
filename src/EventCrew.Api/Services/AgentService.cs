@@ -191,6 +191,7 @@ public class AgentService : IAgentService
         run.ReviewNotes = "Approved.";
         run.UpdatedAt = DateTimeOffset.UtcNow;
 
+        await MaterializeApprovedRosterAsync(run, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Workflow run {RunId} approved by user {UserId}", runId, reviewedByUserId);
@@ -236,6 +237,8 @@ public class AgentService : IAgentService
         CancellationToken cancellationToken)
     {
         var planJson = JsonSerializer.Serialize(plan);
+        var rosterJson = plan.Roster.Count > 0 ? JsonSerializer.Serialize(plan.Roster) : null;
+        var validationJson = plan.Validation is null ? null : JsonSerializer.Serialize(plan.Validation);
 
         var run = new AgentWorkflowRun
         {
@@ -245,6 +248,8 @@ public class AgentService : IAgentService
             Status = "AwaitingApproval",     // ← paused for human approval
             PromptObjective = plan.Objective,
             PlanSummary = planJson,
+            GeneratedRosterProposal = rosterJson,
+            ValidationReport = validationJson,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
@@ -275,6 +280,89 @@ public class AgentService : IAgentService
         return run;
     }
 
+    private async Task MaterializeApprovedRosterAsync(AgentWorkflowRun run, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(run.GeneratedRosterProposal))
+        {
+            return;
+        }
+
+        List<Dictionary<string, JsonElement>> roster;
+        try
+        {
+            roster = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(run.GeneratedRosterProposal, JsonOptions)
+                ?? new List<Dictionary<string, JsonElement>>();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Could not deserialize generated roster for workflow run {RunId}", run.Id);
+            return;
+        }
+
+        if (roster.Count == 0)
+        {
+            return;
+        }
+
+        var eventShifts = await _db.Shifts
+            .AsNoTracking()
+            .Where(shift => shift.EventId == run.EventId)
+            .ToDictionaryAsync(shift => shift.Id, cancellationToken);
+
+        foreach (var assignment in roster)
+        {
+            if (!assignment.TryGetValue("volunteer_id", out var volunteerIdValue) ||
+                !assignment.TryGetValue("shift_id", out var shiftIdValue))
+            {
+                continue;
+            }
+
+            if (!Guid.TryParse(volunteerIdValue.GetString(), out var volunteerId) ||
+                !Guid.TryParse(shiftIdValue.GetString(), out var shiftId))
+            {
+                continue;
+            }
+
+            if (!eventShifts.TryGetValue(shiftId, out var shift))
+            {
+                continue;
+            }
+
+            var volunteer = await _db.VolunteerProfiles
+                .SingleOrDefaultAsync(profile => profile.Id == volunteerId, cancellationToken);
+            if (volunteer is null || !volunteer.IsActive)
+            {
+                continue;
+            }
+
+            var alreadyAssigned = await _db.ShiftAssignments
+                .AnyAsync(item => item.ShiftId == shift.Id && item.VolunteerId == volunteer.Id, cancellationToken);
+            if (alreadyAssigned)
+            {
+                continue;
+            }
+
+            var assignedCount = await _db.ShiftAssignments
+                .CountAsync(item => item.ShiftId == shift.Id && (item.Status == "Confirmed" || item.Status == "Completed"), cancellationToken);
+            if (assignedCount >= shift.Capacity)
+            {
+                continue;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            _db.ShiftAssignments.Add(new ShiftAssignment
+            {
+                Id = Guid.NewGuid(),
+                ShiftId = shift.Id,
+                VolunteerId = volunteer.Id,
+                Status = "Confirmed",
+                AssignedAt = now,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
+    }
+
     private static WorkflowRunDetailDto MapRunToDto(AgentWorkflowRun run) => new()
     {
         RunId = run.Id,
@@ -283,6 +371,8 @@ public class AgentService : IAgentService
         Status = run.Status,
         Objective = run.PromptObjective,
         PlanSummary = run.PlanSummary,
+        GeneratedRosterProposal = run.GeneratedRosterProposal,
+        ValidationReport = run.ValidationReport,
         ReviewedByUserId = run.ReviewedByUserId,
         ReviewNotes = run.ReviewNotes,
         CreatedAt = run.CreatedAt,

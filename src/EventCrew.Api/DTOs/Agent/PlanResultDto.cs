@@ -26,6 +26,15 @@ public class PlanResultDto
     [JsonPropertyName("staffing_recommendations")]
     public List<RoleStaffingRecommendationDto> StaffingRecommendations { get; set; } = new();
 
+    [JsonPropertyName("roster")]
+    public List<Dictionary<string, object>> Roster { get; set; } = new();
+
+    [JsonPropertyName("unfilled_slots")]
+    public List<Dictionary<string, object>> UnfilledSlots { get; set; } = new();
+
+    [JsonPropertyName("validation")]
+    public Dictionary<string, object>? Validation { get; set; }
+
     [JsonPropertyName("next_agent")]
     public string NextAgent { get; set; } = string.Empty;
 
