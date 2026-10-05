@@ -18,6 +18,11 @@ public class AppDbContext : DbContext
     public DbSet<Venue> Venues => Set<Venue>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<RoleRequirement> RoleRequirements => Set<RoleRequirement>();
+    public DbSet<Shift> Shifts => Set<Shift>();
+    public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
+    public DbSet<VolunteerProfile> VolunteerProfiles => Set<VolunteerProfile>();
+    public DbSet<QrCodeToken> QrCodeTokens => Set<QrCodeToken>();
+    public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
 
         // ---- Shared AI workflow state ----
     public DbSet<AgentWorkflowRun> AgentWorkflowRuns => Set<AgentWorkflowRun>();
@@ -41,5 +46,40 @@ public class AppDbContext : DbContext
             .Entity<RoleRequirement>()
             .Property(r => r.MinExperienceLevel)
             .HasConversion<string>();
+
+        modelBuilder
+            .Entity<AttendanceRecord>()
+            .Property(a => a.Status)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasIndex(a => new { a.ShiftId, a.VolunteerId })
+            .IsUnique();
+
+        modelBuilder.Entity<AttendanceRecord>()
+            .HasIndex(a => a.ShiftAssignmentId)
+            .IsUnique();
+
+        modelBuilder.Entity<QrCodeToken>()
+            .HasIndex(t => t.TokenHash)
+            .IsUnique();
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasOne(a => a.Shift)
+            .WithMany(s => s.Assignments)
+            .HasForeignKey(a => a.ShiftId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasOne(a => a.AttendanceRecord)
+            .WithOne(a => a.ShiftAssignment)
+            .HasForeignKey<AttendanceRecord>(a => a.ShiftAssignmentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QrCodeToken>()
+            .HasOne(t => t.Shift)
+            .WithMany(s => s.QrCodeTokens)
+            .HasForeignKey(t => t.ShiftId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

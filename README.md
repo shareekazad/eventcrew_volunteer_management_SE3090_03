@@ -66,6 +66,7 @@ Event organizers struggle to recruit, schedule, and coordinate volunteers effici
 - Layered architecture (Api / Domain / Infrastructure / Tests)
 - DTO-first API contracts (no entity leakage)
 - Business rules enforced in the service layer (status transitions, date ordering, FK validation)
+- QR-token check-in/check-out, attendance monitoring, statistics, and volunteer attendance history
 - JWT authentication (planned)
 - Swagger UI for interactive API exploration
 

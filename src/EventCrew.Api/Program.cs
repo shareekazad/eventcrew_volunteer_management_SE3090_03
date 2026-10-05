@@ -29,6 +29,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Application services
 builder.Services.AddScoped<IVenueService, VenueService>();
 builder.Services.AddScoped<IEventService, EventService>();
+builder.Services.AddScoped<IAttendanceService, AttendanceService>();
 
 // AI service (Python) — typed HttpClient
 builder.Services.AddHttpClient<IAgentService, AgentService>(client =>
