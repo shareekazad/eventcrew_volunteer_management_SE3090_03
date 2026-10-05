@@ -13,9 +13,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // ── Authentication (JWT Bearer) ─────────────────────────────────────────────
-var jwtKey      = builder.Configuration["Jwt:Key"]
-                    ?? Environment.GetEnvironmentVariable("JWT_KEY")
-                    ?? "DevFallbackSecretKeyForLocalTestingOnly12345!";
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey))
+    jwtKey = Environment.GetEnvironmentVariable("JWT_KEY");
+if (string.IsNullOrWhiteSpace(jwtKey))
+    jwtKey = "DevFallbackSecretKeyForLocalTestingOnly12345!";
 var jwtIssuer   = builder.Configuration["Jwt:Issuer"]   ?? "EventCrew";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "EventCrewUsers";
 

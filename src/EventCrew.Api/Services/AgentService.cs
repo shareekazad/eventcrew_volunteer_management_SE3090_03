@@ -11,8 +11,9 @@ namespace EventCrew.Api.Services;
 /// Service that bridges ASP.NET Core to the Python AI service.
 ///
 /// Responsibilities:
-/// 1. Call the Python AI service (planning + matching).
-/// 2. Persist workflow runs and tool-call audit trails.
+/// 1. Call the Python AI service — single-agent (/agent/plan) or
+///    full 4-agent workflow (/workflow/plan).
+/// 2. Persist workflow runs and every tool call as an audit trail.
 /// 3. Manage human approval: approve / reject with audit info.
 /// 4. Return structured DTOs to the controller.
 /// </summary>
@@ -35,9 +36,8 @@ public class AgentService : IAgentService
     }
 
     // ============================================================
-    // PLANNING WORKFLOW (Student 1)
+    // PLANNING WORKFLOW (Student 1) — runs the FULL 4-agent pipeline
     // ============================================================
-
     public async Task<WorkflowRunStatusDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
     {
         var requestBody = JsonSerializer.Serialize(
@@ -45,12 +45,13 @@ public class AgentService : IAgentService
 
         using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
-        _logger.LogInformation("Calling AI service for event {EventId}", eventId);
+        _logger.LogInformation("Calling AI workflow for event {EventId}", eventId);
 
         HttpResponseMessage response;
         try
         {
-            response = await _http.PostAsync("/agent/plan", content, cancellationToken);
+            // Full 4-agent workflow endpoint
+            response = await _http.PostAsync("/workflow/plan", content, cancellationToken);
         }
         catch (HttpRequestException ex)
         {
@@ -66,7 +67,7 @@ public class AgentService : IAgentService
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
             var detail = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("AI service rejected plan for event {EventId}: {Detail}", eventId, detail);
+            _logger.LogWarning("AI service rejected workflow for event {EventId}: {Detail}", eventId, detail);
             throw new InvalidOperationException($"AI service rejected the request: {detail}");
         }
 
@@ -79,26 +80,46 @@ public class AgentService : IAgentService
 
         response.EnsureSuccessStatusCode();
 
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var plan = JsonSerializer.Deserialize<PlanResultDto>(json, JsonOptions)
-                   ?? throw new InvalidOperationException("AI service returned an invalid plan.");
+        var workflowJson = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        // Extract objective + trace count for logging
+        string objective = "Multi-agent staffing plan";
+        int traceCount = 0;
+        try
+        {
+            using var doc = JsonDocument.Parse(workflowJson);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("plan_reasoning", out var reasonEl))
+                objective = reasonEl.GetString() ?? objective;
+
+            if (root.TryGetProperty("agent_traces", out var tracesEl))
+                traceCount = tracesEl.GetArrayLength();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Could not parse workflow response JSON.");
+        }
 
         _logger.LogInformation(
-            "AI service returned plan for event {EventId}: {Steps} steps, {ToolCalls} tool calls",
-            eventId, plan.Steps.Count, plan.ToolCalls.Count);
+            "AI workflow returned for event {EventId}: {TraceCount} agent traces",
+            eventId, traceCount);
 
-        var run = await PersistWorkflowRunAsync(eventId, plan, cancellationToken);
+        var run = await PersistWorkflowRunAsync(eventId, workflowJson, objective, cancellationToken);
 
         return new WorkflowRunStatusDto
         {
             RunId = run.Id,
             EventId = run.EventId,
             Status = run.Status,
-            Objective = run.PromptObjective,
+            Objective = run.PromptObjective,   // entity uses PromptObjective
             CreatedAt = run.CreatedAt
         };
     }
 
+    // ============================================================
+    // GET — full run details
+    // ============================================================
     public async Task<WorkflowRunDetailDto?> GetRunAsync(Guid runId, CancellationToken cancellationToken = default)
     {
         var run = await _db.AgentWorkflowRuns
@@ -108,6 +129,9 @@ public class AgentService : IAgentService
         return run is null ? null : MapRunToDto(run);
     }
 
+    // ============================================================
+    // APPROVE — AwaitingApproval → Approved
+    // ============================================================
     public async Task<WorkflowRunDetailDto?> ApproveAsync(Guid runId, Guid reviewedByUserId, CancellationToken cancellationToken = default)
     {
         var run = await _db.AgentWorkflowRuns
@@ -132,6 +156,9 @@ public class AgentService : IAgentService
         return MapRunToDto(run);
     }
 
+    // ============================================================
+    // REJECT — AwaitingApproval → Rejected (with reason)
+    // ============================================================
     public async Task<WorkflowRunDetailDto?> RejectAsync(Guid runId, Guid reviewedByUserId, string reason, CancellationToken cancellationToken = default)
     {
         var run = await _db.AgentWorkflowRuns
@@ -157,9 +184,8 @@ public class AgentService : IAgentService
     }
 
     // ============================================================
-    // VOLUNTEER MATCHING WORKFLOW (Student 2)
+    // VOLUNTEER MATCHING WORKFLOW (Student 2) — direct proxy
     // ============================================================
-
     public async Task<MatchingResponseDto> MatchVolunteersAsync(
         MatchingRequestDto request,
         Guid initiatedByUserId,
@@ -206,7 +232,7 @@ public class AgentService : IAgentService
             EventId = request.EventId,
             InitiatedByUserId = initiatedByUserId,
             Status = "Completed",
-            PromptObjective = $"Match volunteers for role '{request.RoleName}' (headcount: {request.RequiredHeadcount})",
+            PromptObjective = $"Match volunteers for role '{request.RoleName}' (headcount: {request.RequiredHeadcount})",  // entity field
             GeneratedRosterProposal = JsonSerializer.Serialize(matchingResult, JsonOptions),
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -307,9 +333,13 @@ public class AgentService : IAgentService
     // PRIVATE HELPERS
     // ============================================================
 
+    /// <summary>
+    /// Persists the full workflow run + every agent trace as audit rows.
+    /// </summary>
     private async Task<AgentWorkflowRun> PersistWorkflowRunAsync(
         Guid eventId,
-        PlanResultDto plan,
+        string workflowJson,
+        string objective,
         CancellationToken cancellationToken)
     {
         var organizerId = await _db.Events
@@ -320,7 +350,21 @@ public class AgentService : IAgentService
         if (organizerId is null)
             throw new InvalidOperationException($"Event '{eventId}' not found when persisting workflow run.");
 
-        var planJson = JsonSerializer.Serialize(plan);
+        // Extract agent traces for individual tool log rows
+        var traces = new List<JsonElement>();
+        try
+        {
+            using var doc = JsonDocument.Parse(workflowJson);
+            if (doc.RootElement.TryGetProperty("agent_traces", out var tracesEl))
+            {
+                foreach (var t in tracesEl.EnumerateArray())
+                    traces.Add(t.Clone());
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Could not parse agent_traces from workflow JSON.");
+        }
 
         var run = new AgentWorkflowRun
         {
@@ -328,22 +372,29 @@ public class AgentService : IAgentService
             EventId = eventId,
             InitiatedByUserId = organizerId.Value,
             Status = "AwaitingApproval",
-            PromptObjective = plan.Objective,
-            PlanSummary = planJson,
+            PromptObjective = objective,   // entity field
+            PlanSummary = workflowJson,     // full multi-agent workflow state
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        foreach (var call in plan.ToolCalls)
+        // One audit row per agent tool call
+        foreach (var trace in traces)
         {
+            var agentName = trace.TryGetProperty("agent_name", out var a) ? a.GetString() : "Unknown";
+            var toolName  = trace.TryGetProperty("tool_name", out var tn) ? tn.GetString() : "unknown";
+            var duration  = trace.TryGetProperty("duration_ms", out var d) ? d.GetInt32() : 0;
+
             run.ToolLogs.Add(new AgentToolLog
             {
                 Id = Guid.NewGuid(),
-                AgentName = "PlanningAgent",
-                ToolName = call.ToolName,
-                InputParameters = JsonSerializer.Serialize(call.InputParams),
-                OutputSummary = JsonSerializer.Serialize(new { summary = call.OutputSummary }),
-                ExecutionDurationMs = call.DurationMs,
+                AgentName = agentName ?? "Unknown",
+                ToolName = toolName ?? "unknown",
+                InputParameters = trace.TryGetProperty("input_params", out var ip)
+                    ? ip.GetRawText() : "{}",
+                OutputSummary = trace.TryGetProperty("output_summary", out var os)
+                    ? os.GetRawText() : "{}",
+                ExecutionDurationMs = duration,
                 CalledAt = DateTimeOffset.UtcNow
             });
         }
@@ -352,7 +403,7 @@ public class AgentService : IAgentService
         await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Persisted workflow run {RunId} with {Count} tool log entries for event {EventId}",
+            "Persisted workflow run {RunId} with {Count} tool logs for event {EventId}",
             run.Id, run.ToolLogs.Count, eventId);
 
         return run;
@@ -364,7 +415,7 @@ public class AgentService : IAgentService
         EventId = run.EventId,
         InitiatedByUserId = run.InitiatedByUserId,
         Status = run.Status,
-        Objective = run.PromptObjective,
+        Objective = run.PromptObjective,   // entity uses PromptObjective
         PlanSummary = run.PlanSummary,
         ReviewedByUserId = run.ReviewedByUserId,
         ReviewNotes = run.ReviewNotes,
@@ -391,7 +442,7 @@ public class AgentService : IAgentService
                 MatchingSkills = skillsRequired.Take(Math.Min(skillsRequired.Count, 2)).ToList(),
                 ExperienceLevel = request.MinExperienceLevel == "Advanced" ? "Advanced" : "Intermediate",
                 RatingScore = 4.95,
-                Justification = $"Strong candidate with {(skillsRequired.Count > 0 ? "100%" : "high")} skill overlap, rating 4.95/5.0.",
+                Justification = "Strong candidate with high skill overlap, rating 4.95/5.0.",
             },
             new()
             {
@@ -401,7 +452,7 @@ public class AgentService : IAgentService
                 MatchingSkills = skillsRequired.Take(Math.Min(skillsRequired.Count, 1)).ToList(),
                 ExperienceLevel = "Intermediate",
                 RatingScore = 4.80,
-                Justification = "Qualified candidate with partial skill overlap and rating 4.80/5.0.",
+                Justification = "Qualified candidate with partial skill overlap.",
             },
             new()
             {
@@ -411,7 +462,7 @@ public class AgentService : IAgentService
                 MatchingSkills = skillsRequired.Take(1).ToList(),
                 ExperienceLevel = "Intermediate",
                 RatingScore = 4.70,
-                Justification = "Good candidate with communication and hospitality background, rating 4.70/5.0.",
+                Justification = "Good candidate with communication background.",
             },
         };
 

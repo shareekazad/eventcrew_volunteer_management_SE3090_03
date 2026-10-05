@@ -9,11 +9,17 @@ import {
   Clock,
   Wrench,
   User,
+  Calendar,
+  MapPin,
+  Users,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import type {
   WorkflowRunDetailDto,
   WorkflowRunStatus,
-  PlanResultDto,
+  WorkflowStateDto,
 } from '../../types/agent';
 
 interface Props {
@@ -32,11 +38,10 @@ export const AIPlanPanel: React.FC<Props> = ({
   isActioning,
   actionError,
 }) => {
-  const [showPlan, setShowPlan] = useState(true);
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  const plan = parsePlanSummary(run.planSummary);
+  const workflow = parseWorkflowSummary(run.planSummary);
   const isPending = run.status === 'AwaitingApproval';
 
   const handleReject = async () => {
@@ -53,9 +58,12 @@ export const AIPlanPanel: React.FC<Props> = ({
         <div className="flex items-center">
           <Sparkles className="w-5 h-5 text-brand-600 mr-2" />
           <div>
-            <div className="font-bold text-slate-800">AI Staffing Plan</div>
+            <div className="font-bold text-slate-800">Multi-Agent Staffing Plan</div>
             <div className="text-xs text-slate-500">
               Run ID: <span className="font-mono">{run.runId.slice(0, 8)}…</span>
+              {workflow && (
+                <> • <span className="font-mono">{workflow.agent_traces.length}</span> tool calls</>
+              )}
             </div>
           </div>
         </div>
@@ -63,82 +71,32 @@ export const AIPlanPanel: React.FC<Props> = ({
       </div>
 
       {/* Body */}
-      <div className="p-5 space-y-5">
-        {/* Objective */}
-        <div>
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
-            Objective
-          </div>
-          <div className="text-sm text-slate-700">{run.objective}</div>
-        </div>
+      <div className="p-5 space-y-4">
+        {workflow ? (
+          <>
+            {/* Node 1: Planning */}
+            <PlanningSection workflow={workflow} />
 
-        {/* Reasoning */}
-        {plan && (
-          <div className="rounded-xl bg-brand-50/40 border border-brand-100 p-4">
-            <div className="text-xs font-bold text-brand-700 uppercase tracking-wide mb-1">
-              Reasoning
-            </div>
-            <p className="text-sm text-slate-700 leading-relaxed">
-              {plan.reasoning}
-            </p>
-          </div>
-        )}
+            {/* Node 2: Matching */}
+            <MatchingSection workflow={workflow} />
 
-        {/* Plan steps (collapsible) */}
-        {plan && (
-          <div>
-            <button
-              onClick={() => setShowPlan((v) => !v)}
-              className="flex items-center text-sm font-semibold text-slate-700 hover:text-brand-700 transition-colors"
-            >
-              {showPlan ? (
-                <ChevronDown className="w-4 h-4 mr-1" />
-              ) : (
-                <ChevronRight className="w-4 h-4 mr-1" />
-              )}
-              Plan Steps ({plan.steps.length})
-            </button>
+            {/* Node 3: Scheduling */}
+            <SchedulingSection workflow={workflow} />
 
-            {showPlan && (
-              <div className="mt-3 space-y-2">
-                {plan.steps.map((step) => (
-                  <div
-                    key={step.step_number}
-                    className="flex items-start rounded-xl bg-slate-50 px-4 py-2.5"
-                  >
-                    <div className="w-6 h-6 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
-                      {step.step_number}
-                    </div>
-                    <div className="ml-3 flex-1">
-                      <div className="text-sm font-medium text-slate-800">
-                        {step.action}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5 flex items-center space-x-3">
-                        <span className="flex items-center">
-                          <User className="w-3 h-3 mr-1" />
-                          {step.agent}
-                        </span>
-                        {step.tool && (
-                          <span className="flex items-center">
-                            <Wrench className="w-3 h-3 mr-1" />
-                            {step.tool}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Node 4: Validation */}
+            <ValidationSection workflow={workflow} />
+
+            {/* Audit trail */}
+            <TracesSection workflow={workflow} />
+          </>
+        ) : (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+            This workflow run uses the older single-agent format. Trigger a new
+            plan to see the full 4-agent output.
           </div>
         )}
 
-        {/* Tool calls (collapsible) */}
-        {plan && plan.tool_calls.length > 0 && (
-          <ToolCallsList toolCalls={plan.tool_calls} />
-        )}
-
-        {/* Review notes (if any) */}
+        {/* Review notes */}
         {run.reviewNotes && (
           <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
@@ -160,7 +118,7 @@ export const AIPlanPanel: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Actions */}
+        {/* Approve / Reject */}
         {isPending && !showRejectForm && (
           <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
             <button
@@ -191,12 +149,9 @@ export const AIPlanPanel: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Reject form */}
         {isPending && showRejectForm && (
           <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 space-y-3">
-            <div className="text-sm font-semibold text-red-800">
-              Reject this plan
-            </div>
+            <div className="text-sm font-semibold text-red-800">Reject this plan</div>
             <textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
@@ -238,43 +193,314 @@ export const AIPlanPanel: React.FC<Props> = ({
 };
 
 // ============================================================
-// Helper components
+// Section 1: PlanningAgent
 // ============================================================
-
-const ToolCallsList: React.FC<{ toolCalls: PlanResultDto['tool_calls'] }> = ({
-  toolCalls,
-}) => {
-  const [expanded, setExpanded] = useState(false);
+const PlanningSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) => {
+  const [open, setOpen] = useState(true);
+  const steps = workflow.plan_steps ?? [];
 
   return (
-    <div>
+    <div className="rounded-xl border border-blue-200 bg-blue-50/40">
       <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-center text-sm font-semibold text-slate-700 hover:text-brand-700 transition-colors"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3"
       >
-        {expanded ? (
-          <ChevronDown className="w-4 h-4 mr-1" />
-        ) : (
-          <ChevronRight className="w-4 h-4 mr-1" />
-        )}
-        Tool Calls ({toolCalls.length})
+        <div className="flex items-center">
+          {open ? <ChevronDown className="w-4 h-4 mr-2" /> : <ChevronRight className="w-4 h-4 mr-2" />}
+          <Sparkles className="w-4 h-4 text-blue-600 mr-2" />
+          <span className="font-bold text-slate-800">Node 1 — PlanningAgent</span>
+        </div>
+        <span className="text-xs text-slate-500">{steps.length} steps</span>
       </button>
 
-      {expanded && (
-        <div className="mt-3 space-y-1.5">
-          {toolCalls.map((call, idx) => (
+      {open && (
+        <div className="px-4 pb-4 space-y-3">
+          {workflow.event && (
+            <div className="text-sm text-slate-700">
+              <span className="font-semibold">{workflow.event.title}</span>
+              {workflow.venue && (
+                <span className="text-slate-500">
+                  {' '}at {workflow.venue.name} (capacity {workflow.venue.capacity})
+                </span>
+              )}
+            </div>
+          )}
+
+          {workflow.staffing_ratio && (
+            <div className="text-sm text-slate-700">
+              <span className="text-slate-500">Recommended:</span>{' '}
+              <span className="font-semibold">
+                {workflow.staffing_ratio.recommended_ushers} ushers
+              </span>{' '}
+              +{' '}
+              <span className="font-semibold">
+                {workflow.staffing_ratio.recommended_registration_staff} registration
+              </span>{' '}
+              ({workflow.staffing_ratio.total_staff} total)
+            </div>
+          )}
+
+          {workflow.plan_reasoning && (
+            <p className="text-xs text-slate-600 italic">{workflow.plan_reasoning}</p>
+          )}
+
+          {steps.length > 0 && (
+            <div className="space-y-1.5">
+              {steps.map((s) => (
+                <div
+                  key={s.step_number}
+                  className="flex items-start rounded-lg bg-white px-3 py-2 text-xs"
+                >
+                  <div className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px]">
+                    {s.step_number}
+                  </div>
+                  <div className="ml-2 flex-1">
+                    <div className="font-medium text-slate-700">{s.action}</div>
+                    {s.tool && (
+                      <div className="text-slate-400 flex items-center mt-0.5">
+                        <Wrench className="w-3 h-3 mr-1" />
+                        {s.tool}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
+// Section 2: MatchingAgent
+// ============================================================
+const MatchingSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) => {
+  const [open, setOpen] = useState(false);
+  const results = workflow.matching_results ?? [];
+
+  return (
+    <div className="rounded-xl border border-purple-200 bg-purple-50/40">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3"
+      >
+        <div className="flex items-center">
+          {open ? <ChevronDown className="w-4 h-4 mr-2" /> : <ChevronRight className="w-4 h-4 mr-2" />}
+          <Users className="w-4 h-4 text-purple-600 mr-2" />
+          <span className="font-bold text-slate-800">Node 2 — MatchingAgent</span>
+        </div>
+        <span className="text-xs text-slate-500">
+          {workflow.total_matched}/{workflow.total_headcount_needed} matched
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {results.length === 0 ? (
+            <p className="text-xs text-slate-500 italic">No matching results.</p>
+          ) : (
+            results.map((mr, i) => (
+              <div key={i} className="rounded-lg bg-white p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-700">{mr.role_name}</span>
+                  <span className={statusTagColor(mr.status)}>{mr.status}</span>
+                </div>
+                {mr.error && (
+                  <div className="text-xs text-red-600">Error: {mr.error}</div>
+                )}
+                {mr.matched_candidates.length > 0 ? (
+                  <div className="space-y-1">
+                    {mr.matched_candidates.map((c) => (
+                      <div
+                        key={c.volunteer_id}
+                        className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1.5"
+                      >
+                        <div>
+                          <span className="font-medium text-slate-700">{c.volunteer_name}</span>
+                          <span className="text-slate-400 ml-2">
+                            {c.experience_level} • ⭐ {c.rating_score.toFixed(1)}
+                          </span>
+                        </div>
+                        <span className="font-mono text-purple-600">{c.match_score.toFixed(1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">
+                    No candidates matched ({mr.unfulfilled_slots} slots unfulfilled).
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
+// Section 3: SchedulingAgent
+// ============================================================
+const SchedulingSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) => {
+  const [open, setOpen] = useState(false);
+  const shifts = workflow.proposed_shifts ?? [];
+  const conflicts = workflow.shift_conflicts ?? [];
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/40">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3"
+      >
+        <div className="flex items-center">
+          {open ? <ChevronDown className="w-4 h-4 mr-2" /> : <ChevronRight className="w-4 h-4 mr-2" />}
+          <Calendar className="w-4 h-4 text-amber-600 mr-2" />
+          <span className="font-bold text-slate-800">Node 3 — SchedulingAgent</span>
+        </div>
+        <span className="text-xs text-slate-500">
+          {shifts.length} shifts • {conflicts.length} conflicts
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3">
+          {shifts.length === 0 ? (
+            <p className="text-xs text-slate-500 italic">No shifts proposed.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {shifts.map((s) => {
+                const assigned = s.assigned_candidates.length;
+                return (
+                  <div key={s.shift_id} className="rounded-lg bg-white p-3 text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-slate-700">{s.role_name}</span>
+                      <span className="text-slate-500">
+                        {assigned}/{s.capacity} assigned
+                      </span>
+                    </div>
+                    <div className="text-slate-500">
+                      {formatDateTime(s.start_time)} → {formatDateTime(s.end_time)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {conflicts.length > 0 && (
+            <div className="space-y-1">
+              {conflicts.map((c, i) => (
+                <div key={i} className={`text-xs rounded px-2 py-1.5 ${severityColor(c.severity)}`}>
+                  <AlertTriangle className="w-3 h-3 inline mr-1" />
+                  [{c.severity}] {c.message}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
+// Section 4: ValidationAgent
+// ============================================================
+const ValidationSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) => {
+  const [open, setOpen] = useState(true);
+  const passed = workflow.validation_passed;
+  const errors = workflow.validation_errors ?? [];
+  const warnings = workflow.validation_warnings ?? [];
+
+  return (
+    <div className={`rounded-xl border ${passed ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40'}`}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3"
+      >
+        <div className="flex items-center">
+          {open ? <ChevronDown className="w-4 h-4 mr-2" /> : <ChevronRight className="w-4 h-4 mr-2" />}
+          {passed ? (
+            <ShieldCheck className="w-4 h-4 text-emerald-600 mr-2" />
+          ) : (
+            <ShieldAlert className="w-4 h-4 text-red-600 mr-2" />
+          )}
+          <span className="font-bold text-slate-800">Node 4 — ValidationAgent</span>
+        </div>
+        <span className={`text-xs font-bold ${passed ? 'text-emerald-700' : 'text-red-700'}`}>
+          {passed ? 'PASSED' : `${errors.length} ERROR${errors.length !== 1 ? 'S' : ''}`}
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {errors.length > 0 && (
+            <div className="space-y-1">
+              {errors.map((e, i) => (
+                <div key={i} className="text-xs text-red-700 flex items-start">
+                  <XCircle className="w-3 h-3 mr-1.5 mt-0.5 flex-shrink-0" />
+                  {e}
+                </div>
+              ))}
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <div className="space-y-1">
+              {warnings.map((w, i) => (
+                <div key={i} className="text-xs text-amber-700 flex items-start">
+                  <AlertTriangle className="w-3 h-3 mr-1.5 mt-0.5 flex-shrink-0" />
+                  {w}
+                </div>
+              ))}
+            </div>
+          )}
+          {passed && errors.length === 0 && warnings.length === 0 && (
+            <p className="text-xs text-emerald-700">All validation rules passed.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
+// Section 5: Audit trail
+// ============================================================
+const TracesSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) => {
+  const [open, setOpen] = useState(false);
+  const traces = workflow.agent_traces ?? [];
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3"
+      >
+        <div className="flex items-center">
+          {open ? <ChevronDown className="w-4 h-4 mr-2" /> : <ChevronRight className="w-4 h-4 mr-2" />}
+          <Clock className="w-4 h-4 text-slate-600 mr-2" />
+          <span className="font-bold text-slate-800">Audit Trail</span>
+        </div>
+        <span className="text-xs text-slate-500">{traces.length} entries</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-1">
+          {traces.map((t, i) => (
             <div
-              key={idx}
-              className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs"
+              key={i}
+              className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1.5"
             >
-              <div className="flex items-center font-mono text-slate-700">
-                <Wrench className="w-3 h-3 mr-1.5 text-brand-500" />
-                {call.tool_name}
+              <div className="flex items-center">
+                <User className="w-3 h-3 mr-1.5 text-brand-500" />
+                <span className="font-mono text-slate-600">{t.agent_name}</span>
+                <Wrench className="w-3 h-3 mx-1.5 text-slate-400" />
+                <span className="font-mono text-slate-500">{t.tool_name}</span>
               </div>
-              <div className="flex items-center text-slate-400">
-                <Clock className="w-3 h-3 mr-1" />
-                {call.duration_ms} ms
-              </div>
+              <span className="text-slate-400 font-mono">{t.duration_ms}ms</span>
             </div>
           ))}
         </div>
@@ -283,6 +509,9 @@ const ToolCallsList: React.FC<{ toolCalls: PlanResultDto['tool_calls'] }> = ({
   );
 };
 
+// ============================================================
+// Status badge
+// ============================================================
 const StatusBadge: React.FC<{ status: WorkflowRunStatus }> = ({ status }) => {
   const style = (() => {
     switch (status) {
@@ -301,24 +530,56 @@ const StatusBadge: React.FC<{ status: WorkflowRunStatus }> = ({ status }) => {
     }
   })();
 
-  return (
-    <span
-      className={`px-3 py-1 rounded-lg text-xs font-bold border ${style}`}
-    >
-      {status}
-    </span>
-  );
+  return <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${style}`}>{status}</span>;
 };
 
 // ============================================================
 // Helpers
 // ============================================================
-
-function parsePlanSummary(json: string | null): PlanResultDto | null {
+function parseWorkflowSummary(json: string | null): WorkflowStateDto | null {
   if (!json) return null;
   try {
-    return JSON.parse(json) as PlanResultDto;
+    const parsed = JSON.parse(json);
+    // Check it's the new shape (has agent_traces array)
+    if (Array.isArray(parsed?.agent_traces)) {
+      return parsed as WorkflowStateDto;
+    }
+    return null;
   } catch {
     return null;
+  }
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function statusTagColor(status: string): string {
+  switch (status) {
+    case 'SUCCESS':
+      return 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800';
+    case 'PARTIAL_MATCH':
+      return 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800';
+    case 'SAFE_FAILURE':
+      return 'px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800';
+    default:
+      return 'px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700';
+  }
+}
+
+function severityColor(sev: string): string {
+  switch (sev) {
+    case 'high':
+      return 'bg-red-50 text-red-700 border border-red-200';
+    case 'medium':
+      return 'bg-amber-50 text-amber-700 border border-amber-200';
+    default:
+      return 'bg-slate-50 text-slate-600 border border-slate-200';
   }
 }
