@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
   Users,
@@ -9,10 +10,10 @@ import type { EventDto, EventStatus } from '../../types/event';
 
 interface Props {
   event: EventDto;
-  onView?: (event: EventDto) => void;
 }
 
-export const EventListCard: React.FC<Props> = ({ event, onView }) => {
+export const EventListCard: React.FC<Props> = ({ event }) => {
+  const navigate = useNavigate();
   const statusStyle = statusBadgeStyle(event.status);
   const totalVolunteers = event.roleRequirements.reduce(
     (sum, r) => sum + r.requiredHeadcount,
@@ -21,7 +22,7 @@ export const EventListCard: React.FC<Props> = ({ event, onView }) => {
 
   return (
     <div
-      onClick={() => onView?.(event)}
+      onClick={() => navigate(`/events/${event.id}`)}
       className="rounded-2xl border border-slate-200 bg-white p-5 hover:border-brand-300 hover:shadow-md transition-all cursor-pointer"
     >
       {/* Header: title + status */}

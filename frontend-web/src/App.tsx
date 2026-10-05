@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { ApplicantManagementPage } from './pages/ApplicantManagementPage';
 import { EventWizardPage } from './pages/EventWizardPage';
 import { EventsListPage } from './pages/EventsListPage';
+import { EventDetailPage } from './pages/EventDetailPage';
 import {
   CheckCircle,
   Layers,
@@ -130,6 +131,7 @@ const AppShell: React.FC = () => {
           <Route path="/" element={<ApplicantManagementPage />} />
           <Route path="/events" element={<EventsListPage />} />
           <Route path="/events/new" element={<EventWizardPage />} />
+          <Route path="/events/:id" element={<EventDetailPage />} />
         </Routes>
       </main>
 

@@ -11,9 +11,10 @@ namespace EventCrew.Api.Services;
 /// Service that bridges ASP.NET Core to the Python AI service.
 ///
 /// Responsibilities:
-/// 1. Call the Python /agent/plan endpoint over HTTP.
-/// 2. Persist the workflow run and tool-call audit trail to PostgreSQL.
-/// 3. Return the structured plan.
+/// 1. Call the Python AI service (planning + matching).
+/// 2. Persist workflow runs and tool-call audit trails.
+/// 3. Manage human approval: approve / reject with audit info.
+/// 4. Return structured DTOs to the controller.
 /// </summary>
 public class AgentService : IAgentService
 {
@@ -33,11 +34,12 @@ public class AgentService : IAgentService
         _logger = logger;
     }
 
-    public async Task<PlanResultDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
+    // ============================================================
+    // PLANNING WORKFLOW (Student 1)
+    // ============================================================
+
+    public async Task<WorkflowRunStatusDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
     {
-        // ----------------------------------------------------------------
-        // 1. Call the Python AI service
-        // ----------------------------------------------------------------
         var requestBody = JsonSerializer.Serialize(
             new PlanRequestDto { EventId = eventId.ToString() });
 
@@ -61,7 +63,6 @@ public class AgentService : IAgentService
             throw new InvalidOperationException("AI service timed out.", ex);
         }
 
-        // Propagate business errors from Python (400 Bad Request)
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
             var detail = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -69,7 +70,6 @@ public class AgentService : IAgentService
             throw new InvalidOperationException($"AI service rejected the request: {detail}");
         }
 
-        // Propagate service unavailable errors
         if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
         {
             var detail = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -87,75 +87,77 @@ public class AgentService : IAgentService
             "AI service returned plan for event {EventId}: {Steps} steps, {ToolCalls} tool calls",
             eventId, plan.Steps.Count, plan.ToolCalls.Count);
 
-        // ----------------------------------------------------------------
-        // 2. Persist the workflow run + tool logs
-        // ----------------------------------------------------------------
-        await PersistWorkflowRunAsync(eventId, plan, cancellationToken);
+        var run = await PersistWorkflowRunAsync(eventId, plan, cancellationToken);
 
-        return plan;
+        return new WorkflowRunStatusDto
+        {
+            RunId = run.Id,
+            EventId = run.EventId,
+            Status = run.Status,
+            Objective = run.PromptObjective,
+            CreatedAt = run.CreatedAt
+        };
     }
 
-    // ============================================================
-    // Private helpers
-    // ============================================================
-    private async Task PersistWorkflowRunAsync(
-        Guid eventId,
-        PlanResultDto plan,
-        CancellationToken cancellationToken)
+    public async Task<WorkflowRunDetailDto?> GetRunAsync(Guid runId, CancellationToken cancellationToken = default)
     {
-        // Find an organizer of this event to attribute the run to.
-        // (Later this will come from the JWT-authenticated user.)
-        var organizerId = await _db.Events
-            .Where(e => e.Id == eventId)
-            .Select(e => (Guid?)e.OrganizerId)
-            .FirstOrDefaultAsync(cancellationToken);
+        var run = await _db.AgentWorkflowRuns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
-        if (organizerId is null)
-        {
-            _logger.LogWarning("Cannot persist workflow run: event {EventId} not found", eventId);
-            return;
-        }
+        return run is null ? null : MapRunToDto(run);
+    }
 
-        var planJson = JsonSerializer.Serialize(plan);
+    public async Task<WorkflowRunDetailDto?> ApproveAsync(Guid runId, Guid reviewedByUserId, CancellationToken cancellationToken = default)
+    {
+        var run = await _db.AgentWorkflowRuns
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
-        var run = new AgentWorkflowRun
-        {
-            Id = Guid.NewGuid(),
-            EventId = eventId,
-            InitiatedByUserId = organizerId.Value,
-            Status = "Running",
-            PromptObjective = plan.Objective,
-            PlanSummary = planJson,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow
-        };
+        if (run is null)
+            return null;
 
-        // Add tool logs via the navigation property so EF Core orders
-        // the INSERT correctly (parent first, then children).
-        foreach (var call in plan.ToolCalls)
-        {
-            run.ToolLogs.Add(new AgentToolLog
-            {
-                Id = Guid.NewGuid(),
-                AgentName = "PlanningAgent",
-                ToolName = call.ToolName,
-                InputParameters = JsonSerializer.Serialize(call.InputParams),
-                OutputSummary = JsonSerializer.Serialize(new { summary = call.OutputSummary }),
-                ExecutionDurationMs = call.DurationMs,
-                CalledAt = DateTimeOffset.UtcNow
-            });
-        }
+        if (run.Status != "AwaitingApproval")
+            throw new InvalidOperationException(
+                $"Cannot approve a run in '{run.Status}' status. Only 'AwaitingApproval' runs can be approved.");
 
-        _db.AgentWorkflowRuns.Add(run);
+        run.Status = "Approved";
+        run.ReviewedByUserId = reviewedByUserId;
+        run.ReviewNotes = "Approved by organizer.";
+        run.UpdatedAt = DateTimeOffset.UtcNow;
+
         await _db.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation(
-            "Persisted workflow run {RunId} with {Count} tool log entries for event {EventId}",
-            run.Id, run.ToolLogs.Count, eventId);
+        _logger.LogInformation("Workflow run {RunId} approved by user {UserId}", runId, reviewedByUserId);
+
+        return MapRunToDto(run);
+    }
+
+    public async Task<WorkflowRunDetailDto?> RejectAsync(Guid runId, Guid reviewedByUserId, string reason, CancellationToken cancellationToken = default)
+    {
+        var run = await _db.AgentWorkflowRuns
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        if (run is null)
+            return null;
+
+        if (run.Status != "AwaitingApproval")
+            throw new InvalidOperationException(
+                $"Cannot reject a run in '{run.Status}' status. Only 'AwaitingApproval' runs can be rejected.");
+
+        run.Status = "Rejected";
+        run.ReviewedByUserId = reviewedByUserId;
+        run.ReviewNotes = reason;
+        run.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Workflow run {RunId} rejected by user {UserId}: {Reason}", runId, reviewedByUserId, reason);
+
+        return MapRunToDto(run);
     }
 
     // ============================================================
-    // Volunteer Matching Gateway — Section 9.1 & 10 (HITL)
+    // VOLUNTEER MATCHING WORKFLOW (Student 2)
     // ============================================================
 
     public async Task<MatchingResponseDto> MatchVolunteersAsync(
@@ -169,7 +171,6 @@ public class AgentService : IAgentService
 
         MatchingResponseDto matchingResult;
 
-        // --- 1. Try the Python AI microservice ---
         try
         {
             var body = JsonSerializer.Serialize(request, JsonOptions);
@@ -199,7 +200,6 @@ public class AgentService : IAgentService
             matchingResult = BuildFallbackMatchingResponse(request);
         }
 
-        // --- 2. Persist a workflow run record ---
         var run = new AgentWorkflowRun
         {
             Id = matchingResult.WorkflowId == Guid.Empty ? Guid.NewGuid() : matchingResult.WorkflowId,
@@ -221,7 +221,7 @@ public class AgentService : IAgentService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not persist matching workflow run (DB may be offline). Returning result without persistence.");
+            _logger.LogWarning(ex, "Could not persist matching workflow run (DB may be offline).");
         }
 
         return matchingResult;
@@ -303,9 +303,77 @@ public class AgentService : IAgentService
         };
     }
 
+    // ============================================================
+    // PRIVATE HELPERS
+    // ============================================================
+
+    private async Task<AgentWorkflowRun> PersistWorkflowRunAsync(
+        Guid eventId,
+        PlanResultDto plan,
+        CancellationToken cancellationToken)
+    {
+        var organizerId = await _db.Events
+            .Where(e => e.Id == eventId)
+            .Select(e => (Guid?)e.OrganizerId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (organizerId is null)
+            throw new InvalidOperationException($"Event '{eventId}' not found when persisting workflow run.");
+
+        var planJson = JsonSerializer.Serialize(plan);
+
+        var run = new AgentWorkflowRun
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            InitiatedByUserId = organizerId.Value,
+            Status = "AwaitingApproval",
+            PromptObjective = plan.Objective,
+            PlanSummary = planJson,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        foreach (var call in plan.ToolCalls)
+        {
+            run.ToolLogs.Add(new AgentToolLog
+            {
+                Id = Guid.NewGuid(),
+                AgentName = "PlanningAgent",
+                ToolName = call.ToolName,
+                InputParameters = JsonSerializer.Serialize(call.InputParams),
+                OutputSummary = JsonSerializer.Serialize(new { summary = call.OutputSummary }),
+                ExecutionDurationMs = call.DurationMs,
+                CalledAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        _db.AgentWorkflowRuns.Add(run);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Persisted workflow run {RunId} with {Count} tool log entries for event {EventId}",
+            run.Id, run.ToolLogs.Count, eventId);
+
+        return run;
+    }
+
+    private static WorkflowRunDetailDto MapRunToDto(AgentWorkflowRun run) => new()
+    {
+        RunId = run.Id,
+        EventId = run.EventId,
+        InitiatedByUserId = run.InitiatedByUserId,
+        Status = run.Status,
+        Objective = run.PromptObjective,
+        PlanSummary = run.PlanSummary,
+        ReviewedByUserId = run.ReviewedByUserId,
+        ReviewNotes = run.ReviewNotes,
+        CreatedAt = run.CreatedAt,
+        UpdatedAt = run.UpdatedAt
+    };
+
     /// <summary>
     /// Graceful fallback: returns realistic sample ranked candidates when Python service is offline.
-    /// Clearly marked with IsFallback = true so the UI can inform the organizer.
     /// </summary>
     private static MatchingResponseDto BuildFallbackMatchingResponse(MatchingRequestDto request)
     {
@@ -323,9 +391,7 @@ public class AgentService : IAgentService
                 MatchingSkills = skillsRequired.Take(Math.Min(skillsRequired.Count, 2)).ToList(),
                 ExperienceLevel = request.MinExperienceLevel == "Advanced" ? "Advanced" : "Intermediate",
                 RatingScore = 4.95,
-                Justification = $"Strong candidate with {(skillsRequired.Count > 0 ? "100%" : "high")} skill overlap, " +
-                                $"rating 4.95/5.0, and {(request.MinExperienceLevel == "Advanced" ? "Advanced" : "Intermediate")} " +
-                                $"experience tier for '{request.RoleName}'.",
+                Justification = $"Strong candidate with {(skillsRequired.Count > 0 ? "100%" : "high")} skill overlap, rating 4.95/5.0.",
             },
             new()
             {
@@ -335,8 +401,7 @@ public class AgentService : IAgentService
                 MatchingSkills = skillsRequired.Take(Math.Min(skillsRequired.Count, 1)).ToList(),
                 ExperienceLevel = "Intermediate",
                 RatingScore = 4.80,
-                Justification = $"Qualified candidate with partial skill overlap and rating 4.80/5.0. " +
-                                $"Experienced in logistics and team coordination for large events.",
+                Justification = "Qualified candidate with partial skill overlap and rating 4.80/5.0.",
             },
             new()
             {
@@ -346,8 +411,7 @@ public class AgentService : IAgentService
                 MatchingSkills = skillsRequired.Take(1).ToList(),
                 ExperienceLevel = "Intermediate",
                 RatingScore = 4.70,
-                Justification = $"Good candidate with communication and hospitality background, " +
-                                $"rating 4.70/5.0. Well suited for public-facing roles.",
+                Justification = "Good candidate with communication and hospitality background, rating 4.70/5.0.",
             },
         };
 

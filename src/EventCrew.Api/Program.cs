@@ -12,16 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// ── Authentication (JWT Bearer) ──────────────────────────────────────────────
-var jwtKey     = builder.Configuration["Jwt:Key"]
+// ── Authentication (JWT Bearer) ─────────────────────────────────────────────
+var jwtKey      = builder.Configuration["Jwt:Key"]
                     ?? Environment.GetEnvironmentVariable("JWT_KEY")
                     ?? "DevFallbackSecretKeyForLocalTestingOnly12345!";
-if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey == "SET_VIA_ENV_VAR_OR_SECRET")
-{
-    jwtKey = Environment.GetEnvironmentVariable("JWT_KEY")
-             ?? "DevFallbackSecretKeyForLocalTestingOnly12345!";
-}
-var jwtIssuer  = builder.Configuration["Jwt:Issuer"]   ?? "EventCrew";
+var jwtIssuer   = builder.Configuration["Jwt:Issuer"]   ?? "EventCrew";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "EventCrewUsers";
 
 builder.Services
@@ -44,11 +39,8 @@ builder.Services
 builder.Services.AddAuthorization();
 
 // ── Application Services ─────────────────────────────────────────────────────
-// Student 1: Events and Venues
 builder.Services.AddScoped<IVenueService, VenueService>();
 builder.Services.AddScoped<IEventService, EventService>();
-
-// Student 2: Volunteer Profiles and Applications
 builder.Services.AddScoped<IVolunteerService, VolunteerService>();
 
 // AI service (Python) — typed HttpClient
@@ -61,6 +53,18 @@ builder.Services.AddHttpClient<IAgentService, AgentService>(client =>
 
 // ── MVC ─────────────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
+
+// ── CORS — allow Flutter web app (localhost, any port) + deployed frontend ──
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontends", policy =>
+    {
+        policy
+            .SetIsOriginAllowed(_ => true)      // allow localhost:anyport during dev
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 
 // ── Swagger / OpenAPI ────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -103,6 +107,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("AllowFrontends");
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
