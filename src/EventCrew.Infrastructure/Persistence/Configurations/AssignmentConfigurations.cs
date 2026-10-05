@@ -27,6 +27,9 @@ public sealed class VolunteerProfileConfiguration : IEntityTypeConfiguration<Vol
         builder.HasKey(profile => profile.Id);
         builder.Property(profile => profile.Id).HasColumnName("id").HasColumnType("uuid");
         builder.Property(profile => profile.UserId).HasColumnName("user_id").HasColumnType("uuid");
+        builder.Property(profile => profile.FullName).HasColumnName("full_name").HasMaxLength(100).IsRequired();
+        builder.Property(profile => profile.Email).HasColumnName("email").HasMaxLength(150).IsRequired();
+        builder.Property(profile => profile.IsActive).HasColumnName("is_active").IsRequired();
         builder.HasOne(profile => profile.User)
             .WithOne()
             .HasForeignKey<VolunteerProfile>(profile => profile.UserId)

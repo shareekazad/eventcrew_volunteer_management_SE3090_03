@@ -1,24 +1,19 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ============================================================================
--- SHARED IDENTITY & AUTHENTICATION
--- ============================================================================
+-- Shared identity used by JWT authentication.
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('Admin', 'Organizer', 'Volunteer')),
-    phone_number VARCHAR(20),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
-
 
 -- ============================================================================
 -- STUDENT 1: EVENT MANAGEMENT & REQUIREMENTS
@@ -37,7 +32,7 @@ CREATE TABLE venues (
 
 CREATE TABLE events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organizer_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    organizer_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     venue_id UUID REFERENCES venues(id) ON DELETE SET NULL,
     title VARCHAR(200) NOT NULL,
     description TEXT,
@@ -80,7 +75,10 @@ CREATE TABLE skills (
 
 CREATE TABLE volunteer_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL DEFAULT 'Demo Volunteer',
+    email VARCHAR(150) NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     emergency_contact VARCHAR(20) NOT NULL,
     bio TEXT,
     max_hours_per_week INT NOT NULL DEFAULT 20 CHECK (max_hours_per_week > 0),
@@ -140,7 +138,6 @@ CREATE TABLE shift_assignments (
     volunteer_id UUID NOT NULL REFERENCES volunteer_profiles(id) ON DELETE CASCADE,
     status VARCHAR(20) NOT NULL DEFAULT 'Proposed_By_AI'
         CHECK (status IN ('Proposed_By_AI', 'Confirmed', 'Declined', 'Completed', 'Cancelled')),
-    assigned_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -194,14 +191,14 @@ CREATE TABLE attendance_records (
 CREATE TABLE agent_workflow_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    initiated_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    initiated_by_user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     status VARCHAR(30) NOT NULL DEFAULT 'Running'
         CHECK (status IN ('Running', 'AwaitingApproval', 'Approved', 'Rejected', 'Failed')),
     prompt_objective TEXT NOT NULL,
     plan_summary JSONB,                 -- Output from Planning Agent (Steps breakdown)
     generated_roster_proposal JSONB,    -- Output from Scheduling & Matching Agents
     validation_report JSONB,            -- Output from Validation Agent (Deterministic checks)
-    reviewed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_by_user_id UUID,
     review_notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

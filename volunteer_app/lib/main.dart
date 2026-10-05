@@ -14,11 +14,9 @@ void main() {
   runApp(const EventCrewApp());
 }
 
-/// Root widget of the EventCrew volunteer mobile app.
 class EventCrewApp extends StatelessWidget {
-  const EventCrewApp({super.key, this.authRepository, this.apiClient});
+  const EventCrewApp({super.key, this.apiClient});
 
-  final AuthRepository? authRepository;
   final ApiClient? apiClient;
 
   @override
@@ -30,25 +28,15 @@ class EventCrewApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: MainNavigationScreen(
-        authRepository: authRepository,
-        apiClient: apiClient,
-      ),
+      home: MainNavigationScreen(apiClient: apiClient),
     );
   }
 }
 
-/// Main navigation shell for Shifts, My Shifts, Shift Swaps, and Profile.
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({
-    super.key,
-    this.initialIndex = 0,
-    this.authRepository,
-    this.apiClient,
-  });
+  const MainNavigationScreen({super.key, this.initialIndex = 0, this.apiClient});
 
   final int initialIndex;
-  final AuthRepository? authRepository;
   final ApiClient? apiClient;
 
   @override
@@ -56,59 +44,64 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  late int _currentIndex;
-  late final AuthRepository _authRepository;
-  late final ApiClient _apiClient;
+  late int _currentIndex = widget.initialIndex;
+  late final ApiClient _apiClient = widget.apiClient ?? ApiClient();
+  late final AuthRepository _authRepository = AuthRepository();
+  bool _showRoleSelection = false;
+  bool _showLogin = false;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
-    _apiClient = widget.apiClient ?? ApiClient();
-    _authRepository =
-        widget.authRepository ??
-        (widget.apiClient == null
-            ? AuthRepository()
-            : AuthRepository.withDependencies(
-                apiClient: _apiClient,
-                tokenStore: SecureAuthTokenStore(),
-              ));
-    _authRepository.addListener(_onAuthChanged);
+    _authRepository.updateApiClient(_apiClient);
     unawaited(_authRepository.initialize());
   }
 
   @override
-  void dispose() {
-    _authRepository.removeListener(_onAuthChanged);
-    super.dispose();
-  }
-
-  void _onAuthChanged() {
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final isAuthenticated = _authRepository.isAuthenticated;
-    if (!_authRepository.isInitialized || _authRepository.isInitializing) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    if (!isAuthenticated &&
-        (_authRepository.token != null ||
-            _authRepository.initializationError != null)) {
-      return _SessionRestoreError(
-        message:
-            _authRepository.initializationError ??
-            'Your saved session could not be verified.',
-        onRetry: _authRepository.initialize,
-        onSignOut: _authRepository.logout,
+    if (_showLogin) {
+      return LoginScreen(
+        authRepository: _authRepository,
+        onLoginSuccess: () => setState(() {
+          _showLogin = false;
+          _showRoleSelection = false;
+        }),
       );
     }
 
-    if (!isAuthenticated) {
-      return LoginScreen(authRepository: _authRepository);
+    if (_showRoleSelection) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('EventCrew Demo')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Continue as', style: TextStyle(fontSize: 22)),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: 280,
+                  child: FilledButton(
+                    onPressed: () => setState(() => _showRoleSelection = false),
+                    child: const Text('Volunteer'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: 280,
+                  child: OutlinedButton(
+                    onPressed: () => setState(() => _showLogin = true),
+                    child: const Text('Sign in with a volunteer account'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text('Organizer features are available in the EventCrew web app.'),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     return Scaffold(
@@ -118,16 +111,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           AvailableShiftsScreen(apiClient: _apiClient),
           MyShiftsScreen(apiClient: _apiClient),
           ShiftSwapsScreen(apiClient: _apiClient),
-          ProfileScreen(authRepository: _authRepository),
+          ProfileScreen(onSwitchRole: _switchRole),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.work_outline),
@@ -153,66 +142,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
     );
   }
-}
 
-class _SessionRestoreError extends StatelessWidget {
-  const _SessionRestoreError({
-    required this.message,
-    required this.onRetry,
-    required this.onSignOut,
-  });
-
-  final String message;
-  final Future<void> Function() onRetry;
-  final Future<void> Function() onSignOut;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Restore session')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off_outlined, size: 56),
-              const SizedBox(height: 16),
-              const Text(
-                'Could not verify your saved session',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: () => onRetry(),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  try {
-                    await onSignOut();
-                  } catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Could not clear saved session: $error',
-                          ),
-                        ),
-                      );
-                    }
-                  }
-                },
-                child: const Text('Sign out'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _switchRole() async {
+    if (_authRepository.isAuthenticated) {
+      await _authRepository.logout();
+    }
+    if (mounted) setState(() => _showRoleSelection = true);
   }
 }

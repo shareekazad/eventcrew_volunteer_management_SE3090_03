@@ -7,7 +7,7 @@
 ## Context
 
 The EventCrew React web application handles:
-- Authentication state (current user, role, token)
+- Demo role state (Organizer or Volunteer, stored locally for navigation only)
 - Server data (events, venues, applicants, roster proposals)
 - UI state (wizard step, modal visibility, form drafts)
 - Cross-cutting state (notifications, loading flags)
@@ -22,7 +22,7 @@ We need a state-management approach that:
 
 ### 1. React Context + useReducer
 - ✅ Built-in — no dependency
-- ✅ Fine for authentication state
+- ✅ Fine for lightweight demo role state
 - ❌ Manual re-render optimization (contexts re-render every consumer)
 - ❌ Doesn't handle async out-of-the-box
 - ❌ Verbose for cross-cutting concerns (loading, errors)
@@ -49,7 +49,7 @@ We need a state-management approach that:
 **Use Zustand for global client state**, with plain `fetch` + `useEffect` for server data in the initial scope.
 
 Specifically:
-- One store per **domain** (`authStore`, `eventStore`, `uiStore`)
+- One store per **domain** (`demoRoleStore`, `eventStore`, `uiStore`)
 - Server data fetched via small service modules (`api/events.ts`), not stored globally unless shared across routes
 - If server data needs more sophistication later, we adopt **TanStack Query** alongside Zustand (they're designed to work together)
 

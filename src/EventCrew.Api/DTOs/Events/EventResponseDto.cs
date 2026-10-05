@@ -2,7 +2,7 @@ namespace EventCrew.Api.DTOs.Events;
 
 /// <summary>
 /// Response shape returned to clients when reading an event.
-/// Includes nested role requirements, but no navigation to users/venue entities.
+/// Includes nested role requirements, but no navigation to identity or venue entities.
 /// </summary>
 public class EventResponseDto
 {

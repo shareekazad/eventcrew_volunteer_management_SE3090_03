@@ -23,7 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<AgentWorkflowRun> AgentWorkflowRuns => Set<AgentWorkflowRun>();
     public DbSet<AgentToolLog> AgentToolLogs => Set<AgentToolLog>();
 
-    // ---- Shared identity ----
+    // Shared identity
     public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

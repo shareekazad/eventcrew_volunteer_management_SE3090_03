@@ -1,9 +1,8 @@
 import axios, { isAxiosError } from 'axios'
 import { clearAccessToken, getAccessToken } from '../auth/tokenStorage'
 
-export const AUTH_SESSION_EXPIRED_EVENT = 'eventcrew:auth-session-expired'
-
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5100'
+export const AUTH_SESSION_EXPIRED_EVENT = 'eventcrew:auth-session-expired'
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.DEV ? '/api' : configuredApiBaseUrl,

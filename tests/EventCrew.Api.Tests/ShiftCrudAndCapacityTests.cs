@@ -38,16 +38,19 @@ public class ShiftCrudAndCapacityTests
         // Add 4 existing confirmed assignments
         for (int i = 0; i < 4; i++)
         {
-            var user = new User { Id = Guid.NewGuid(), FullName = $"Volunteer {i}", Email = $"vol{i}@test.com", Role = "Volunteer" };
-            var profile = new VolunteerProfile { Id = Guid.NewGuid(), UserId = user.Id, User = user };
+            var profile = new VolunteerProfile
+            {
+                Id = Guid.NewGuid(),
+                FullName = $"Volunteer {i}",
+                Email = $"vol{i}@test.com"
+            };
             var assignment = new ShiftAssignment { Id = Guid.NewGuid(), ShiftId = shift.Id, VolunteerId = profile.Id, Status = "Confirmed" };
-            context.Users.Add(user);
             context.VolunteerProfiles.Add(profile);
             context.ShiftAssignments.Add(assignment);
         }
         await context.SaveChangesAsync();
 
-        var controller = ControllerTestAuth.AsUser(new ShiftController(context), organizerId, "Organizer");
+        var controller = new ShiftController(context);
 
         // Try updating capacity to 3 (less than 4 existing assignments) -> Reject
         var updateRequest3 = new UpdateShiftRequest
@@ -90,7 +93,7 @@ public class ShiftCrudAndCapacityTests
         context.RoleRequirements.Add(req);
         await context.SaveChangesAsync();
 
-        var controller = ControllerTestAuth.AsUser(new ShiftController(context), organizerId, "Organizer");
+        var controller = new ShiftController(context);
 
         // Create
         var createRequest = new CreateShiftRequest

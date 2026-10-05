@@ -10,20 +10,6 @@ public class EventServiceTests
     // ============================================================
     // Helpers
     // ============================================================
-    private static async Task<User> AddTestOrganizerAsync(Infrastructure.Data.AppDbContext db)
-    {
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            FullName = "Test Organizer",
-            Email = $"org-{Guid.NewGuid()}@test.local",
-            Role = "Organizer"
-        };
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-        return user;
-    }
-
     private static async Task<Venue> AddTestVenueAsync(Infrastructure.Data.AppDbContext db)
     {
         var venue = new Venue
@@ -46,13 +32,13 @@ public class EventServiceTests
     public async Task CreateAsync_CreatesDraftEvent_WithNestedRoles()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var venue = await AddTestVenueAsync(db);
         var service = new EventService(db);
 
         var dto = new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             VenueId = venue.Id,
             Title = "Tech Meetup",
             Category = "Conference",
@@ -82,12 +68,12 @@ public class EventServiceTests
     public async Task CreateAsync_Throws_WhenStartDateAfterEndDate()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var service = new EventService(db);
 
         var dto = new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             Title = "Bad Dates",
             Category = "Test",
             StartDate = DateTimeOffset.UtcNow.AddDays(10),
@@ -101,10 +87,10 @@ public class EventServiceTests
     }
 
     // ============================================================
-    // Business rule: organizer must exist
+    // Demo mode does not require a registered organizer account.
     // ============================================================
     [Fact]
-    public async Task CreateAsync_Throws_WhenOrganizerDoesNotExist()
+    public async Task CreateAsync_DoesNotRequireAnOrganizerUserRecord()
     {
         using var db = TestDbFactory.Create();
         var service = new EventService(db);
@@ -118,10 +104,9 @@ public class EventServiceTests
             EndDate = DateTimeOffset.UtcNow.AddDays(2)
         };
 
-        var act = async () => await service.CreateAsync(dto);
+        var created = await service.CreateAsync(dto);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Organizer does not exist*");
+        created.OrganizerId.Should().Be(dto.OrganizerId);
     }
 
     // ============================================================
@@ -131,12 +116,12 @@ public class EventServiceTests
     public async Task CreateAsync_Throws_WhenVenueDoesNotExist()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var service = new EventService(db);
 
         var dto = new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             VenueId = Guid.NewGuid(),
             Title = "Ghost Venue",
             Category = "Test",
@@ -157,12 +142,12 @@ public class EventServiceTests
     public async Task UpdateStatusAsync_AllowsLegalTransition_DraftToPublished()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var service = new EventService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             Title = "Test Event",
             Category = "Test",
             StartDate = DateTimeOffset.UtcNow.AddDays(1),
@@ -183,12 +168,12 @@ public class EventServiceTests
     public async Task UpdateStatusAsync_Throws_OnIllegalTransition_DraftToCompleted()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var service = new EventService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             Title = "Test",
             Category = "Test",
             StartDate = DateTimeOffset.UtcNow.AddDays(1),
@@ -221,12 +206,12 @@ public class EventServiceTests
     public async Task AddRoleAsync_AddsRole_ToDraftEvent()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var service = new EventService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             Title = "Test",
             Category = "Test",
             StartDate = DateTimeOffset.UtcNow.AddDays(1),
@@ -248,12 +233,12 @@ public class EventServiceTests
     public async Task AddRoleAsync_Throws_WhenEventIsCancelled()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var service = new EventService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             Title = "Test",
             Category = "Test",
             StartDate = DateTimeOffset.UtcNow.AddDays(1),
@@ -280,12 +265,12 @@ public class EventServiceTests
     public async Task DeleteAsync_RemovesEvent()
     {
         using var db = TestDbFactory.Create();
-        var organizer = await AddTestOrganizerAsync(db);
+        var organizer = Guid.NewGuid();
         var service = new EventService(db);
 
         var created = await service.CreateAsync(new CreateEventDto
         {
-            OrganizerId = organizer.Id,
+            OrganizerId = organizer,
             Title = "Delete Me",
             Category = "Test",
             StartDate = DateTimeOffset.UtcNow.AddDays(1),

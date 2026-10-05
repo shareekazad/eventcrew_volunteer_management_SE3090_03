@@ -12,9 +12,10 @@ import {
 import { getAllShifts } from '../../api/shiftService'
 import { getApiErrorMessage } from '../../api/client'
 import OrganizerSidebar from '../../components/OrganizerSidebar'
-import { useAuth } from '../../auth/useAuth'
+import { useDemoRole } from '../../useDemoRole'
 import type { ShiftSwapRequest } from '../../types/shiftSwap'
 import type { Shift } from '../../types/shift'
+import { previewShifts, previewSwaps } from '../dev/previewData'
 
 type Toast = { kind: 'success' | 'error'; message: string }
 
@@ -37,11 +38,11 @@ function SwapSkeleton() {
   )
 }
 
-export default function ShiftSwapsPage() {
-  const { user } = useAuth()
-  const [swaps, setSwaps] = useState<ShiftSwapRequest[]>([])
-  const [shifts, setShifts] = useState<Shift[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+export default function ShiftSwapsPage({ previewMode = false }: { previewMode?: boolean }) {
+  const { role } = useDemoRole()
+  const [swaps, setSwaps] = useState<ShiftSwapRequest[]>(() => previewMode ? previewSwaps : [])
+  const [shifts, setShifts] = useState<Shift[]>(() => previewMode ? previewShifts : [])
+  const [isLoading, setIsLoading] = useState(!previewMode)
   const [apiError, setApiError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('All statuses')
   const [searchTerm, setSearchTerm] = useState('')
@@ -59,6 +60,7 @@ export default function ShiftSwapsPage() {
   const showToast = useCallback((kind: Toast['kind'], message: string) => setToast({ kind, message }), [])
 
   const fetchSwapsAndShifts = useCallback(async () => {
+    if (previewMode) return
     try {
       const [swapsData, shiftsData] = await Promise.all([getAllShiftSwaps(), getAllShifts()])
       setSwaps(swapsData)
@@ -69,9 +71,10 @@ export default function ShiftSwapsPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [previewMode])
 
   useEffect(() => {
+    if (previewMode) return
     let isActive = true
     Promise.all([getAllShiftSwaps(), getAllShifts()])
       .then(([swapsData, shiftsData]) => {
@@ -89,7 +92,7 @@ export default function ShiftSwapsPage() {
     return () => {
       isActive = false
     }
-  }, [])
+  }, [previewMode])
 
   useEffect(() => {
     if (!toast) return
@@ -114,7 +117,7 @@ export default function ShiftSwapsPage() {
     })
   }, [searchTerm, statusFilter, swaps])
 
-  const isOrganizerOrAdmin = user?.role === 'Organizer' || user?.role === 'Admin'
+  const isOrganizerOrAdmin = role === 'Organizer' || previewMode
 
   const handleApprove = async (id: string) => {
     setActionInProgressId(id)
@@ -183,6 +186,7 @@ export default function ShiftSwapsPage() {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (previewMode) return
     setIsSubmitting(true)
     try {
       await createShiftSwap({
@@ -207,9 +211,10 @@ export default function ShiftSwapsPage() {
 
   return (
     <div className="dashboard-shell">
-      <OrganizerSidebar activePage="swaps" />
+      <OrganizerSidebar activePage="swaps" previewMode={previewMode} />
 
       <main className="main-content" id="swaps">
+        {previewMode && <div className="development-preview-notice" role="status"><strong>DEVELOPMENT PREVIEW — Authentication bypassed for UI testing</strong><span>Local demo data · changes are disabled.</span></div>}
         <header className="topbar">
           <div className="mobile-brand">
             <span className="brand-mark">
@@ -221,7 +226,7 @@ export default function ShiftSwapsPage() {
             Workspace <ChevronRight size={15} /> Shift Swaps
           </div>
           <button className="topbar-avatar" type="button" aria-label="User profile">
-            {user?.fullName?.substring(0, 2).toUpperCase() ?? 'EC'}
+            {role === 'Organizer' || previewMode ? 'OR' : 'VO'}
           </button>
         </header>
 
@@ -351,7 +356,7 @@ export default function ShiftSwapsPage() {
                       <th style={{ textAlign: 'left', padding: '12px' }}>Target Shift</th>
                       <th style={{ textAlign: 'left', padding: '12px' }}>Reason</th>
                       <th style={{ textAlign: 'left', padding: '12px' }}>Status</th>
-                      <th style={{ textAlign: 'right', padding: '12px' }}>Actions</th>
+                      {!previewMode && <th style={{ textAlign: 'right', padding: '12px' }}>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -385,7 +390,7 @@ export default function ShiftSwapsPage() {
                               {swap.status.replace('_', ' ')}
                             </span>
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                          {!previewMode && <td style={{ padding: '12px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                               {isOrganizerOrAdmin && swap.status === 'Pending_Organizer' && (
                                 <>
@@ -440,7 +445,7 @@ export default function ShiftSwapsPage() {
                                 </button>
                               )}
                             </div>
-                          </td>
+                          </td>}
                         </tr>
                       )
                     })}
@@ -458,7 +463,7 @@ export default function ShiftSwapsPage() {
         </div>
       </main>
 
-      {showCreateModal && (
+      {!previewMode && showCreateModal && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-swap-title">
           <div className="modal-card">
             <header className="modal-header">

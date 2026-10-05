@@ -15,6 +15,9 @@ public class ShiftPersistenceModelTests
             .Options;
 
         using var context = new EventCrewDbContext(options);
+        var user = context.Model.FindEntityType(typeof(User));
+        Assert.NotNull(user);
+        Assert.Equal("users", user.GetTableName());
         var shift = context.Model.FindEntityType(typeof(Shift));
 
         Assert.NotNull(shift);

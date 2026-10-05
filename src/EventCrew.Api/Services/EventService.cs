@@ -66,11 +66,6 @@ public class EventService : IEventService
         if (dto.StartDate >= dto.EndDate)
             throw new InvalidOperationException("Start date must be before end date.");
 
-        var organizerExists = await _db.Users
-            .AnyAsync(u => u.Id == dto.OrganizerId, cancellationToken);
-        if (!organizerExists)
-            throw new InvalidOperationException("Organizer does not exist.");
-
         if (dto.VenueId.HasValue)
         {
             var venueExists = await _db.Venues

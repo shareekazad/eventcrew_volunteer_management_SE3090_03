@@ -7,6 +7,7 @@ import { getAllShifts } from '../../api/shiftService'
 import OrganizerSidebar from '../../components/OrganizerSidebar'
 import type { EligibleVolunteer, ShiftAssignment } from '../../types/assignment'
 import type { Shift } from '../../types/shift'
+import { previewAssignments, previewEligibleVolunteers, previewEvents, previewShifts } from '../dev/previewData'
 
 type Notice = { kind: 'success' | 'error'; message: string }
 
@@ -18,19 +19,19 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-export default function AssignmentManagementPage() {
-  const [events, setEvents] = useState<EventRecord[]>([])
-  const [shifts, setShifts] = useState<Shift[]>([])
-  const [eventsLoading, setEventsLoading] = useState(true)
-  const [shiftsLoading, setShiftsLoading] = useState(true)
+export default function AssignmentManagementPage({ previewMode = false }: { previewMode?: boolean }) {
+  const [events, setEvents] = useState<EventRecord[]>(() => previewMode ? previewEvents : [])
+  const [shifts, setShifts] = useState<Shift[]>(() => previewMode ? previewShifts : [])
+  const [eventsLoading, setEventsLoading] = useState(!previewMode)
+  const [shiftsLoading, setShiftsLoading] = useState(!previewMode)
   const [eventsError, setEventsError] = useState<string | null>(null)
   const [shiftsError, setShiftsError] = useState<string | null>(null)
   const [eventsRetry, setEventsRetry] = useState(0)
   const [shiftsRetry, setShiftsRetry] = useState(0)
-  const [selectedEventId, setSelectedEventId] = useState('')
-  const [selectedShiftId, setSelectedShiftId] = useState('')
-  const [assignments, setAssignments] = useState<ShiftAssignment[]>([])
-  const [eligibleVolunteers, setEligibleVolunteers] = useState<EligibleVolunteer[]>([])
+  const [selectedEventId, setSelectedEventId] = useState(() => previewMode ? 'preview-event' : '')
+  const [selectedShiftId, setSelectedShiftId] = useState(() => previewMode ? 'preview-shift-registration' : '')
+  const [assignments, setAssignments] = useState<ShiftAssignment[]>(() => previewMode ? previewAssignments : [])
+  const [eligibleVolunteers, setEligibleVolunteers] = useState<EligibleVolunteer[]>(() => previewMode ? previewEligibleVolunteers : [])
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [detailsError, setDetailsError] = useState<string | null>(null)
   const [refreshDetails, setRefreshDetails] = useState(0)
@@ -40,22 +41,24 @@ export default function AssignmentManagementPage() {
   const [notice, setNotice] = useState<Notice | null>(null)
 
   useEffect(() => {
+    if (previewMode) return
     let isActive = true
     getAllEvents()
       .then((data) => { if (isActive) { setEvents(data); setEventsError(null) } })
       .catch((error: unknown) => { if (isActive) setEventsError(getApiErrorMessage(error)) })
       .finally(() => { if (isActive) setEventsLoading(false) })
     return () => { isActive = false }
-  }, [eventsRetry])
+  }, [eventsRetry, previewMode])
 
   useEffect(() => {
+    if (previewMode) return
     let isActive = true
     getAllShifts()
       .then((data) => { if (isActive) { setShifts(data); setShiftsError(null) } })
       .catch((error: unknown) => { if (isActive) setShiftsError(getApiErrorMessage(error)) })
       .finally(() => { if (isActive) setShiftsLoading(false) })
     return () => { isActive = false }
-  }, [shiftsRetry])
+  }, [shiftsRetry, previewMode])
 
   const eventId = selectedEventId || events[0]?.id || ''
   const eventShifts = useMemo(() => shifts.filter((shift) => shift.eventId === eventId), [eventId, shifts])
@@ -63,7 +66,7 @@ export default function AssignmentManagementPage() {
   const isFull = Boolean(selectedShift && selectedShift.remainingCapacity <= 0)
 
   useEffect(() => {
-    if (!selectedShift) return
+    if (previewMode || !selectedShift) return
 
     let isActive = true
     Promise.all([getAssignments({ shiftId: selectedShift.id }), getEligibleVolunteers(selectedShift.id)])
@@ -75,7 +78,7 @@ export default function AssignmentManagementPage() {
       .catch((error: unknown) => { if (isActive) setDetailsError(getApiErrorMessage(error)) })
       .finally(() => { if (isActive) setDetailsLoading(false) })
     return () => { isActive = false }
-  }, [refreshDetails, selectedShift])
+  }, [refreshDetails, selectedShift, previewMode])
 
   useEffect(() => {
     if (!notice) return
@@ -84,6 +87,7 @@ export default function AssignmentManagementPage() {
   }, [notice])
 
   const refreshShiftData = async () => {
+    if (previewMode) return
     setDetailsLoading(true)
     setDetailsError(null)
     try {
@@ -97,6 +101,7 @@ export default function AssignmentManagementPage() {
   }
 
   const assignVolunteer = async () => {
+    if (previewMode) return
     if (!selectedShift || !volunteerId || isFull) return
     setIsAssigning(true)
     try {
@@ -112,6 +117,7 @@ export default function AssignmentManagementPage() {
   }
 
   const unassignVolunteer = async (assignment: ShiftAssignment) => {
+    if (previewMode) return
     setRemovingId(assignment.id)
     try {
       await deleteAssignment(assignment.id)
@@ -132,20 +138,21 @@ export default function AssignmentManagementPage() {
 
   return (
     <div className="dashboard-shell">
-      <OrganizerSidebar activePage="assignments" />
+      <OrganizerSidebar activePage="assignments" previewMode={previewMode} />
       <main className="main-content" id="assignments">
+        {previewMode && <div className="development-preview-notice" role="status"><strong>DEVELOPMENT PREVIEW — Authentication bypassed for UI testing</strong><span>Local demo data · changes are disabled.</span></div>}
         <header className="topbar"><div className="mobile-brand"><span className="brand-mark"><CalendarDays size={17} /></span>eventcrew<span className="brand-period">.</span></div><div className="topbar-context">Organizer workspace <ChevronRight size={15} /> Assignment management</div><button className="topbar-avatar" type="button" aria-label="Organizer profile">JM</button></header>
         <div className="page-content">
-          <div className="breadcrumb"><a href="#events">My events</a><ChevronRight size={14} /><span>Assignments</span></div>
+          <div className="breadcrumb"><a href={previewMode ? '#overview' : '#events'}>{previewMode ? 'Dashboard' : 'My events'}</a><ChevronRight size={14} /><span>Assignments</span></div>
           <section className="page-heading"><div><p className="eyebrow">VOLUNTEER ROSTERING</p><h1>Assignment management</h1><p className="page-subtitle">Place eligible volunteers into event shifts.</p></div></section>
 
           <section className="assignment-selector" aria-label="Event and shift selection">
             <label className="assignment-field" htmlFor="assignment-event">Event
-              <span className="select-wrap"><select id="assignment-event" value={eventId} disabled={eventsLoading || !events.length} onChange={(event) => { setSelectedEventId(event.target.value); setSelectedShiftId(''); setVolunteerId(''); setAssignments([]); setEligibleVolunteers([]); setDetailsLoading(false); setDetailsError(null) }}><option value="">{eventsLoading ? 'Loading events…' : 'Select an event'}</option>{events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
+              <span className="select-wrap"><select id="assignment-event" value={eventId} disabled={previewMode || eventsLoading || !events.length} onChange={(event) => { setSelectedEventId(event.target.value); setSelectedShiftId(''); setVolunteerId(''); setAssignments([]); setEligibleVolunteers([]); setDetailsLoading(false); setDetailsError(null) }}><option value="">{eventsLoading ? 'Loading events…' : 'Select an event'}</option>{events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
               {eventsError && <span className="field-error" role="alert">{eventsError} <button className="inline-retry" type="button" onClick={() => { setEventsLoading(true); setEventsRetry((current) => current + 1) }}>Retry</button></span>}
             </label>
             <label className="assignment-field" htmlFor="assignment-shift">Shift
-              <span className="select-wrap"><select id="assignment-shift" value={selectedShiftId} disabled={!eventId || shiftsLoading || !eventShifts.length} onChange={(event) => { setSelectedShiftId(event.target.value); setVolunteerId(''); setAssignments([]); setEligibleVolunteers([]); setDetailsError(null); setDetailsLoading(Boolean(event.target.value)) }}><option value="">{shiftsLoading ? 'Loading shifts…' : eventShifts.length ? 'Select a shift' : 'No shifts for this event'}</option>{eventShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
+              <span className="select-wrap"><select id="assignment-shift" value={selectedShiftId} disabled={previewMode || !eventId || shiftsLoading || !eventShifts.length} onChange={(event) => { setSelectedShiftId(event.target.value); setVolunteerId(''); setAssignments([]); setEligibleVolunteers([]); setDetailsError(null); setDetailsLoading(Boolean(event.target.value)) }}><option value="">{shiftsLoading ? 'Loading shifts…' : eventShifts.length ? 'Select a shift' : 'No shifts for this event'}</option>{eventShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.title}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span>
               {shiftsError && <span className="field-error" role="alert">{shiftsError} <button className="inline-retry" type="button" onClick={() => { setShiftsLoading(true); setShiftsRetry((current) => current + 1) }}>Retry</button></span>}
             </label>
           </section>
@@ -161,7 +168,7 @@ export default function AssignmentManagementPage() {
             {!detailsError && <div className="assignment-columns">
               <section className="assignment-section" aria-labelledby="assigned-heading">
                 <div className="section-heading"><div><h2 id="assigned-heading">Assigned volunteers <span className="count-pill">{assignedCount}</span></h2><p>Volunteers currently rostered for this shift.</p></div></div>
-                {detailsLoading ? <div className="assignment-loading" role="status">Loading roster…</div> : assignments.length ? <ul className="assignment-list">{assignments.map((assignment) => <li className="assignment-person" key={assignment.id}><div className="person-avatar">{assignment.volunteerName.split(/\s+/).slice(0, 2).map((name) => name[0]).join('').toUpperCase()}</div><div className="person-info"><strong>{assignment.volunteerName}</strong><span>{assignment.volunteerEmail}</span></div><span className={`status-badge status-${assignment.status.toLowerCase()}`}>{assignment.status}</span><button className="unassign-button" type="button" disabled={removingId === assignment.id} onClick={() => void unassignVolunteer(assignment)} aria-label={`Unassign ${assignment.volunteerName}`}><UserX size={16} /><span>{removingId === assignment.id ? 'Removing…' : 'Unassign'}</span></button></li>)}</ul> : <div className="assignment-empty"><Users size={22} /><p>No volunteers assigned yet.</p></div>}
+                {detailsLoading ? <div className="assignment-loading" role="status">Loading roster…</div> : assignments.length ? <ul className="assignment-list">{assignments.map((assignment) => <li className="assignment-person" key={assignment.id}><div className="person-avatar">{assignment.volunteerName.split(/\s+/).slice(0, 2).map((name) => name[0]).join('').toUpperCase()}</div><div className="person-info"><strong>{assignment.volunteerName}</strong><span>{assignment.volunteerEmail}</span></div><span className={`status-badge status-${assignment.status.toLowerCase()}`}>{assignment.status}</span>{!previewMode && <button className="unassign-button" type="button" disabled={removingId === assignment.id} onClick={() => void unassignVolunteer(assignment)} aria-label={`Unassign ${assignment.volunteerName}`}><UserX size={16} /><span>{removingId === assignment.id ? 'Removing…' : 'Unassign'}</span></button>}</li>)}</ul> : <div className="assignment-empty"><Users size={22} /><p>No volunteers assigned yet.</p></div>}
               </section>
 
               <section className="assignment-section assign-section" aria-labelledby="assign-heading">
@@ -171,7 +178,7 @@ export default function AssignmentManagementPage() {
                 </label>
                 {isFull && <p className="capacity-note">This shift is full. Unassign someone to make room.</p>}
                 {!isFull && !detailsLoading && !eligibleVolunteers.length && <p className="capacity-note">No eligible volunteers are available for this shift.</p>}
-                <button className="button button-primary assign-button" type="button" disabled={!volunteerId || isAssigning || isFull || detailsLoading} onClick={() => void assignVolunteer()}><UserPlus size={17} />{isAssigning ? 'Assigning…' : 'Assign Volunteer'}</button>
+                {previewMode ? <p className="capacity-note">Demo view only. Assignment changes are disabled.</p> : <button className="button button-primary assign-button" type="button" disabled={!volunteerId || isAssigning || isFull || detailsLoading} onClick={() => void assignVolunteer()}><UserPlus size={17} />{isAssigning ? 'Assigning…' : 'Assign Volunteer'}</button>}
               </section>
             </div>}
           </> : <div className="assignment-select-empty"><div className="empty-illustration"><Users size={27} /></div><h2>{shiftsLoading ? 'Loading shifts…' : !eventId ? 'Select an event to begin' : shiftsError ? 'Shifts couldn’t be loaded' : 'Select a shift to manage its roster'}</h2><p>{shiftsError ? shiftsError : 'Choose an event and one of its shifts to view assignments and capacity.'}</p></div>}

@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:volunteer_app/core/api/api_client.dart';
-import 'package:volunteer_app/features/auth/data/models/auth_user_model.dart';
 import 'package:volunteer_app/features/shift_swaps/data/repositories/shift_swap_repository.dart';
 import 'package:volunteer_app/features/shifts/data/repositories/shift_repository.dart';
 
@@ -48,23 +47,6 @@ void main() {
     'createdAt': '2026-10-01T10:00:00Z',
     'updatedAt': '2026-10-01T10:00:00Z',
   };
-
-  test('login response parses the auth DTO returned by ASP.NET Core', () {
-    final login = LoginResponseModel.fromJson({
-      'accessToken': 'session-token',
-      'expiresAt': '2026-10-03T10:00:00Z',
-      'user': {
-        'id': 'user-id',
-        'fullName': 'Alex Volunteer',
-        'email': 'alex@example.test',
-        'role': 'Volunteer',
-      },
-    });
-
-    expect(login.accessToken, 'session-token');
-    expect(login.user.id, 'user-id');
-    expect(login.user.role, 'Volunteer');
-  });
 
   test('shift repository parses the GET /api/shifts DTO', () async {
     late Uri requestUri;

@@ -1,114 +1,46 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:volunteer_app/core/api/api_client.dart';
-import 'package:volunteer_app/features/auth/data/repositories/auth_repository.dart';
 import 'package:volunteer_app/features/shifts/data/models/shift_model.dart';
 import 'package:volunteer_app/features/shifts/presentation/widgets/shift_card.dart';
 import 'package:volunteer_app/main.dart';
 
 void main() {
-  late AuthRepository authRepository;
-  late ApiClient apiClient;
-
-  setUp(() {
-    apiClient = ApiClient(
-      client: MockClient((request) async {
-        if (request.url.path == '/api/auth/login') {
-          return http.Response(
-            jsonEncode({
-              'accessToken': 'test-token',
-              'expiresAt': '2026-10-03T10:00:00Z',
-              'user': {
-                'id': 'user-id',
-                'fullName': 'Alex Volunteer',
-                'email': 'alex@example.test',
-                'role': 'Volunteer',
-              },
-            }),
-            200,
-          );
-        }
-        if (request.url.path == '/api/auth/me') {
-          return http.Response(
-            jsonEncode({
-              'id': 'user-id',
-              'fullName': 'Alex Volunteer',
-              'email': 'alex@example.test',
-              'role': 'Volunteer',
-            }),
-            200,
-          );
-        }
-        if (request.url.path == '/api/shifts/my-assignments') {
-          return http.Response(
-            jsonEncode({'volunteerId': 'profile-id', 'assignments': []}),
-            200,
-          );
-        }
-        return http.Response('[]', 200);
-      }),
-    );
-    authRepository = AuthRepository.withDependencies(
-      apiClient: apiClient,
-      tokenStore: _MemoryAuthTokenStore(),
-    );
-  });
-
-  testWidgets('EventCrewApp displays the real volunteer login screen', (
+  testWidgets('EventCrew opens directly in the demo volunteer interface', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(
-      EventCrewApp(authRepository: authRepository, apiClient: apiClient),
+    final apiClient = ApiClient(
+      client: MockClient((_) async => http.Response('[]', 200)),
     );
-    await tester.pumpAndSettle();
 
-    expect(find.text('Volunteer Login'), findsOneWidget);
-    expect(find.text('EventCrew Mobile'), findsOneWidget);
-    expect(find.text('Log In'), findsOneWidget);
-  });
-
-  testWidgets('login form reports missing credentials', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      EventCrewApp(authRepository: authRepository, apiClient: apiClient),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Log In'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Please enter your email'), findsOneWidget);
-    expect(find.text('Please enter your password'), findsOneWidget);
-  });
-
-  testWidgets('successful login opens authenticated shift navigation', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      EventCrewApp(authRepository: authRepository, apiClient: apiClient),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byType(TextFormField).at(0),
-      'alex@example.test',
-    );
-    await tester.enterText(find.byType(TextFormField).at(1), 'password');
-    await tester.tap(find.text('Log In'));
+    await tester.pumpWidget(EventCrewApp(apiClient: apiClient));
     await tester.pumpAndSettle();
 
     expect(find.text('Available Shifts'), findsOneWidget);
     expect(find.text('My Shifts'), findsWidgets);
     expect(find.text('Shift Swaps'), findsWidgets);
     expect(find.text('Volunteer Login'), findsNothing);
+  });
 
-    await tester.tap(find.text('My Shifts').last);
+  testWidgets('profile can switch back to demo role selection', (
+    WidgetTester tester,
+  ) async {
+    final apiClient = ApiClient(
+      client: MockClient((_) async => http.Response('[]', 200)),
+    );
+
+    await tester.pumpWidget(EventCrewApp(apiClient: apiClient));
     await tester.pumpAndSettle();
-    expect(find.text('No shifts assigned yet'), findsOneWidget);
+    await tester.tap(find.text('Profile'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Switch Role'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue as'), findsOneWidget);
+    expect(find.text('Volunteer'), findsOneWidget);
+    expect(find.text('Organizer features are available in the EventCrew web app.'), findsOneWidget);
   });
 
   testWidgets('ShiftCard displays shift details and capacity', (
@@ -132,9 +64,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: ShiftCard(shift: shift)),
-      ),
+      MaterialApp(home: Scaffold(body: ShiftCard(shift: shift))),
     );
 
     expect(find.text('Welcome Desk'), findsOneWidget);
@@ -142,21 +72,4 @@ void main() {
     expect(find.text('Role: Guest Services'), findsOneWidget);
     expect(find.text('5 of 8 spots remaining'), findsOneWidget);
   });
-}
-
-class _MemoryAuthTokenStore implements AuthTokenStore {
-  String? token;
-
-  @override
-  Future<void> clear() async {
-    token = null;
-  }
-
-  @override
-  Future<String?> read() async => token;
-
-  @override
-  Future<void> write(String value) async {
-    token = value;
-  }
 }

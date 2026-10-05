@@ -10,49 +10,29 @@ namespace EventCrew.Api.Tests;
 public class ShiftControllerRelationshipTests
 {
     [Fact]
-    public async Task MyAssignmentsReturnsOnlyTheCurrentVolunteersConfirmedAssignments()
+    public async Task MyAssignmentsReturnsConfirmedAssignmentsForTheDemoVolunteer()
     {
         var options = new DbContextOptionsBuilder<EventCrewDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         await using var context = new EventCrewDbContext(options);
-        var volunteerUser = new User
-        {
-            Id = Guid.NewGuid(),
-            FullName = "Volunteer",
-            Email = "volunteer@test.com",
-            Role = AuthorizationRoles.Volunteer
-        };
-        var otherUser = new User
-        {
-            Id = Guid.NewGuid(),
-            FullName = "Other Volunteer",
-            Email = "other@test.com",
-            Role = AuthorizationRoles.Volunteer
-        };
-        var organizer = new User
-        {
-            Id = Guid.NewGuid(),
-            FullName = "Organizer",
-            Email = "organizer@test.com",
-            Role = AuthorizationRoles.Organizer
-        };
+        var organizerId = Guid.NewGuid();
         var volunteer = new VolunteerProfile
         {
-            Id = Guid.NewGuid(),
-            UserId = volunteerUser.Id,
-            User = volunteerUser
+            Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            FullName = "Volunteer",
+            Email = "volunteer@test.com"
         };
         var otherVolunteer = new VolunteerProfile
         {
-            Id = Guid.NewGuid(),
-            UserId = otherUser.Id,
-            User = otherUser
+            Id = Guid.Parse("00000000-0000-0000-0000-000000000002"),
+            FullName = "Other Volunteer",
+            Email = "other@test.com"
         };
         var eventEntity = new Event
         {
             Id = Guid.NewGuid(),
-            OrganizerId = organizer.Id,
+            OrganizerId = organizerId,
             Title = "Community Festival",
             Category = "Community"
         };
@@ -88,7 +68,6 @@ public class ShiftControllerRelationshipTests
             VolunteerId = otherVolunteer.Id,
             Status = "Confirmed"
         };
-        context.Users.AddRange(volunteerUser, otherUser, organizer);
         context.VolunteerProfiles.AddRange(volunteer, otherVolunteer);
         context.Events.Add(eventEntity);
         context.RoleRequirements.Add(roleRequirement);
@@ -96,10 +75,7 @@ public class ShiftControllerRelationshipTests
         context.ShiftAssignments.AddRange(ownAssignment, otherAssignment);
         await context.SaveChangesAsync();
 
-        var controller = ControllerTestAuth.AsUser(
-            new ShiftController(context),
-            volunteerUser.Id,
-            AuthorizationRoles.Volunteer);
+        var controller = new ShiftController(context);
         var result = await controller.GetMyAssignments(CancellationToken.None);
 
         var response = Assert.IsType<VolunteerAssignmentsResponse>(
@@ -134,7 +110,7 @@ public class ShiftControllerRelationshipTests
         context.RoleRequirements.Add(requirement);
         await context.SaveChangesAsync();
 
-        var controller = ControllerTestAuth.AsUser(new ShiftController(context), organizerId, "Organizer");
+        var controller = new ShiftController(context);
         var result = await controller.Create(new CreateShiftRequest
         {
             Title = "Morning registration",

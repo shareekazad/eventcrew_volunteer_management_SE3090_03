@@ -6,13 +6,14 @@ type ShiftTableProps = {
   shifts: Shift[]
   onEdit: (shift: Shift) => void
   onDelete: (shift: Shift) => void
+  readOnly?: boolean
 }
 
-export default function ShiftTable({ shifts, onEdit, onDelete }: ShiftTableProps) {
+export default function ShiftTable({ shifts, onEdit, onDelete, readOnly = false }: ShiftTableProps) {
   return (
     <div className="table-scroll">
       <table className="shift-table">
-        <thead><tr><th>Shift title</th><th>Event</th><th>Requirement</th><th>Date</th><th>Start time</th><th>End time</th><th>Capacity</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>Shift title</th><th>Event</th><th>Requirement</th><th>Date</th><th>Start time</th><th>End time</th><th>Capacity</th><th>Status</th>{!readOnly && <th><span className="sr-only">Actions</span></th>}</tr></thead>
         <tbody>
           {shifts.map((shift) => {
             const start = new Date(shift.startTime)
@@ -24,10 +25,10 @@ export default function ShiftTable({ shifts, onEdit, onDelete }: ShiftTableProps
                 <td>{start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td>
                 <td>{start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td><td>{end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
                 <td>{shift.capacity}</td><td><ShiftStatusBadge status={shift.status} /></td>
-                <td><div className="row-actions">
+                {!readOnly && <td><div className="row-actions">
                   <button className="icon-button" type="button" aria-label={`Edit ${shift.title}`} onClick={() => onEdit(shift)}><Pencil size={16} /></button>
                   <button className="icon-button danger-icon" type="button" aria-label={`Delete ${shift.title}`} onClick={() => onDelete(shift)}><Trash2 size={16} /></button>
-                </div></td>
+                </div></td>}
               </tr>
             )
           })}

@@ -6,9 +6,10 @@ type ShiftCardProps = {
   shift: Shift
   onEdit: (shift: Shift) => void
   onDelete: (shift: Shift) => void
+  readOnly?: boolean
 }
 
-export default function ShiftCard({ shift, onEdit, onDelete }: ShiftCardProps) {
+export default function ShiftCard({ shift, onEdit, onDelete, readOnly = false }: ShiftCardProps) {
   const start = new Date(shift.startTime)
   const end = new Date(shift.endTime)
 
@@ -24,10 +25,10 @@ export default function ShiftCard({ shift, onEdit, onDelete }: ShiftCardProps) {
         <span><Clock3 size={15} aria-hidden="true" />{start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} – {end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
         <span><Users size={15} aria-hidden="true" />{shift.capacity} volunteers</span>
       </div>
-      <div className="card-actions">
+      {!readOnly && <div className="card-actions">
         <button className="icon-button" type="button" aria-label={`Edit ${shift.title}`} onClick={() => onEdit(shift)}><Pencil size={16} /></button>
         <button className="icon-button danger-icon" type="button" aria-label={`Delete ${shift.title}`} onClick={() => onDelete(shift)}><Trash2 size={16} /></button>
-      </div>
+      </div>}
     </article>
   )
 }

@@ -12,7 +12,7 @@ namespace EventCrew.Api.Tests;
 public sealed class AgentServiceTests
 {
     [Fact]
-    public async Task PlanningSendsAuthorizedEventContextAndPersistsInitiatorAndToolAudit()
+    public async Task PlanningSendsEventContextWithoutAuthorizationAndPersistsAudit()
     {
         await using var db = CreateDb();
         var (eventEntity, venue, initiatorId) = await SeedEventAsync(db);

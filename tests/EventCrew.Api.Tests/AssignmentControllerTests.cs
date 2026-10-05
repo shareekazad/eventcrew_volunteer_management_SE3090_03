@@ -107,7 +107,7 @@ public class AssignmentControllerTests
         context.ShiftAssignments.Add(CreateAssignment(data.Shift.Id, volunteer.Id));
         await context.SaveChangesAsync();
 
-        var result = await ControllerTestAuth.AsUser(new ShiftController(context), data.Event.OrganizerId, "Organizer").GetAll(CancellationToken.None);
+        var result = await new ShiftController(context).GetAll(CancellationToken.None);
 
         var response = Assert.Single(Assert.IsType<OkObjectResult>(result.Result).Value as IReadOnlyList<ShiftResponse> ?? []);
         Assert.Equal(1, response.AssignedCount);
@@ -152,13 +152,12 @@ public class AssignmentControllerTests
         string applicationStatus,
         Guid? applicationRequirementId)
     {
-        var user = new User
+        var profile = new VolunteerProfile
         {
-            Id = Guid.NewGuid(), FullName = $"Volunteer {Guid.NewGuid():N}"[..20],
-            Email = $"{Guid.NewGuid():N}@example.test", Role = "Volunteer", IsActive = true
+            Id = Guid.NewGuid(),
+            FullName = $"Volunteer {Guid.NewGuid():N}"[..20],
+            Email = $"{Guid.NewGuid():N}@example.test"
         };
-        var profile = new VolunteerProfile { Id = Guid.NewGuid(), UserId = user.Id, User = user };
-        context.Users.Add(user);
         context.VolunteerProfiles.Add(profile);
         context.Applications.Add(new Application
         {
@@ -180,7 +179,7 @@ public class AssignmentControllerTests
     }
 
     private static AssignmentController AssignmentControllerFor(EventCrewDbContext context, ShiftTestData data) =>
-        ControllerTestAuth.AsUser(new AssignmentController(context), data.Event.OrganizerId, "Organizer");
+        new(context);
 
     private sealed record ShiftTestData(Event Event, RoleRequirement Requirement, Shift Shift);
 }

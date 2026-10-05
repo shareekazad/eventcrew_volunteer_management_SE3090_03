@@ -9,6 +9,7 @@ import ShiftModal from '../../components/ShiftModal'
 import ShiftTable from '../../components/ShiftTable'
 import OrganizerSidebar from '../../components/OrganizerSidebar'
 import type { Shift, ShiftFormValues, ShiftWriteRequest } from '../../types/shift'
+import { previewEvents, previewShifts } from '../dev/previewData'
 
 type Toast = { kind: 'success' | 'error'; message: string }
 
@@ -27,15 +28,15 @@ function toShiftRequest(values: ShiftFormValues): ShiftWriteRequest {
   }
 }
 
-export default function ShiftManagementPage() {
-  const [shifts, setShifts] = useState<Shift[]>([])
-  const [events, setEvents] = useState<EventRecord[]>([])
-  const [eventsLoading, setEventsLoading] = useState(true)
+export default function ShiftManagementPage({ previewMode = false }: { previewMode?: boolean }) {
+  const [shifts, setShifts] = useState<Shift[]>(() => previewMode ? previewShifts : [])
+  const [events, setEvents] = useState<EventRecord[]>(() => previewMode ? previewEvents : [])
+  const [eventsLoading, setEventsLoading] = useState(!previewMode)
   const [eventsError, setEventsError] = useState<string | null>(null)
   const [eventsRetry, setEventsRetry] = useState(0)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(!previewMode)
   const [apiError, setApiError] = useState<string | null>(null)
   const [editingShift, setEditingShift] = useState<Shift | null | undefined>(undefined)
   const [deletingShift, setDeletingShift] = useState<Shift | null>(null)
@@ -44,6 +45,7 @@ export default function ShiftManagementPage() {
   const [toast, setToast] = useState<Toast | null>(null)
 
   const loadShifts = useCallback(async () => {
+    if (previewMode) return true
     try {
       setShifts(await getAllShifts())
       setApiError(null)
@@ -52,9 +54,10 @@ export default function ShiftManagementPage() {
       setApiError(getApiErrorMessage(error))
       return false
     } finally { setIsLoading(false) }
-  }, [])
+  }, [previewMode])
 
   useEffect(() => {
+    if (previewMode) return
     let isActive = true
     getAllShifts()
       .then((data) => {
@@ -69,8 +72,9 @@ export default function ShiftManagementPage() {
         if (isActive) setIsLoading(false)
       })
     return () => { isActive = false }
-  }, [])
+  }, [previewMode])
   useEffect(() => {
+    if (previewMode) return
     let isActive = true
     getAllEvents()
       .then((data) => {
@@ -85,7 +89,7 @@ export default function ShiftManagementPage() {
         if (isActive) setEventsLoading(false)
       })
     return () => { isActive = false }
-  }, [eventsRetry])
+  }, [eventsRetry, previewMode])
   useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(null), 4500)
@@ -107,6 +111,7 @@ export default function ShiftManagementPage() {
   const cancelDelete = useCallback(() => setDeletingShift(null), [])
 
   const saveShift = useCallback(async (values: ShiftFormValues, id?: string) => {
+    if (previewMode) return
     setIsSaving(true)
     try {
       const request = toShiftRequest(values)
@@ -120,9 +125,10 @@ export default function ShiftManagementPage() {
     } finally {
       setIsSaving(false)
     }
-  }, [loadShifts, showToast])
+  }, [loadShifts, previewMode, showToast])
 
   const confirmDelete = useCallback(async () => {
+    if (previewMode) return
     if (!deletingShift) return
     setIsDeleting(true)
     try {
@@ -135,39 +141,41 @@ export default function ShiftManagementPage() {
     } finally {
       setIsDeleting(false)
     }
-  }, [deletingShift, loadShifts, showToast])
+  }, [deletingShift, loadShifts, previewMode, showToast])
 
   const retryEvents = useCallback(() => {
+    if (previewMode) return
     setEventsLoading(true)
     setEventsRetry((current) => current + 1)
-  }, [])
+  }, [previewMode])
   const selectedEventName = events.length > 1 ? `${events.length} events available` : events[0]?.title ?? 'No events available'
 
   return (
     <div className="dashboard-shell">
-      <OrganizerSidebar activePage="shifts" />
+      <OrganizerSidebar activePage="shifts" previewMode={previewMode} />
 
       <main className="main-content" id="shifts">
+        {previewMode && <div className="development-preview-notice" role="status"><strong>DEVELOPMENT PREVIEW — Authentication bypassed for UI testing</strong><span>Local demo data · changes are disabled.</span></div>}
         <header className="topbar"><div className="mobile-brand"><span className="brand-mark"><CalendarDays size={17} /></span>eventcrew<span className="brand-period">.</span></div><div className="topbar-context">Organizer workspace <ChevronRight size={15} /> Shift management</div><button className="topbar-avatar" type="button" aria-label="Organizer profile">JM</button></header>
         <div className="page-content">
-          <div className="breadcrumb"><a href="#events">My events</a><ChevronRight size={14} /><span>All shifts</span></div>
-          <section className="page-heading"><div><p className="eyebrow">EVENT OPERATIONS</p><h1>Shift management</h1><p className="page-subtitle">Plan coverage and keep your event running smoothly.</p></div><button className="button button-primary create-button" type="button" onClick={() => setEditingShift(null)}><Plus size={18} />Create Shift</button></section>
+          <div className="breadcrumb"><a href={previewMode ? '#overview' : '#events'}>{previewMode ? 'Dashboard' : 'My events'}</a><ChevronRight size={14} /><span>All shifts</span></div>
+          <section className="page-heading"><div><p className="eyebrow">EVENT OPERATIONS</p><h1>Shift management</h1><p className="page-subtitle">Plan coverage and keep your event running smoothly.</p></div>{!previewMode && <button className="button button-primary create-button" type="button" onClick={() => setEditingShift(null)}><Plus size={18} />Create Shift</button>}</section>
           <section className="event-banner" aria-label="Event data"><div className="event-symbol"><CalendarDays size={20} /></div><div className="event-info"><span>EVENTS AVAILABLE</span><strong>{selectedEventName}</strong></div><div className="event-date">{shifts.length} {shifts.length === 1 ? 'SHIFT' : 'SHIFTS'} LOADED</div></section>
           <section className="summary-row" aria-label="Shift summary"><div className="summary-item"><span className="summary-icon blue"><Clock3 size={17} /></span><div><span>Total shifts</span><strong>{shifts.length}</strong></div></div><div className="summary-item"><span className="summary-icon green"><Users size={17} /></span><div><span>Volunteer spots</span><strong>{shifts.reduce((sum, shift) => sum + shift.capacity, 0)}</strong></div></div><div className="summary-item"><span className="summary-icon amber"><CalendarDays size={17} /></span><div><span>Scheduled shifts</span><strong>{shifts.filter((shift) => shift.status === 'Scheduled').length}</strong></div></div></section>
 
           <section className="shift-section" aria-labelledby="shift-list-heading">
             <div className="section-heading"><div><h2 id="shift-list-heading">All shifts <span className="count-pill">{filteredShifts.length}</span></h2><p>Manage shift times, requirements, and volunteer capacity.</p></div></div>
-            <div className="toolbar"><label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Search shifts</span><input type="search" placeholder="Search shifts, roles..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />{searchTerm && <button type="button" className="clear-search" aria-label="Clear search" onClick={() => setSearchTerm('')}><X size={15} /></button>}</label><label className="filter-field"><span className="sr-only">Filter by status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>All statuses</option>{statuses.map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></label><button className="button button-primary toolbar-create" type="button" onClick={() => setEditingShift(null)}><Plus size={17} />Create Shift</button></div>
+            <div className="toolbar"><label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Search shifts</span><input type="search" placeholder="Search shifts, roles..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />{searchTerm && <button type="button" className="clear-search" aria-label="Clear search" onClick={() => setSearchTerm('')}><X size={15} /></button>}</label><label className="filter-field"><span className="sr-only">Filter by status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>All statuses</option>{statuses.map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></label>{!previewMode && <button className="button button-primary toolbar-create" type="button" onClick={() => setEditingShift(null)}><Plus size={17} />Create Shift</button>}</div>
 
-            {isLoading ? <ShiftTableSkeleton /> : apiError ? <div className="api-error" role="alert"><strong>Shifts couldn’t be loaded</strong><p>{apiError}</p><button className="button button-secondary" type="button" onClick={() => { setIsLoading(true); void loadShifts() }}>Retry</button></div> : filteredShifts.length ? <><div className="desktop-shifts"><ShiftTable shifts={filteredShifts} onEdit={setEditingShift} onDelete={setDeletingShift} /></div><div className="mobile-shifts">{filteredShifts.map((shift) => <ShiftCard key={shift.id} shift={shift} onEdit={setEditingShift} onDelete={setDeletingShift} />)}</div><div className="table-footer">Showing <strong>{filteredShifts.length}</strong> of <strong>{shifts.length}</strong> shifts <span>·</span> Loaded from EventCrew API</div></> : <div className="empty-state"><div className="empty-illustration"><CalendarDays size={28} /><span><Plus size={14} /></span></div><h3>{shifts.length ? 'No shifts match your search' : 'No shifts have been created yet.'}</h3><p>{shifts.length ? 'Try a different search or status filter.' : 'Create a shift using an event and its role requirement.'}</p>{shifts.length ? <button className="button button-secondary" type="button" onClick={() => { setSearchTerm(''); setStatusFilter('All statuses') }}>Clear filters</button> : <button className="button button-primary" type="button" onClick={() => setEditingShift(null)}><Plus size={17} />Create Shift</button>}</div>}
+            {isLoading ? <ShiftTableSkeleton /> : apiError ? <div className="api-error" role="alert"><strong>Shifts couldn’t be loaded</strong><p>{apiError}</p><button className="button button-secondary" type="button" onClick={() => { setIsLoading(true); void loadShifts() }}>Retry</button></div> : filteredShifts.length ? <><div className="desktop-shifts"><ShiftTable shifts={filteredShifts} onEdit={setEditingShift} onDelete={setDeletingShift} readOnly={previewMode} /></div><div className="mobile-shifts">{filteredShifts.map((shift) => <ShiftCard key={shift.id} shift={shift} onEdit={setEditingShift} onDelete={setDeletingShift} readOnly={previewMode} />)}</div><div className="table-footer">Showing <strong>{filteredShifts.length}</strong> of <strong>{shifts.length}</strong> shifts <span>·</span> {previewMode ? 'Development sample data' : 'Loaded from EventCrew API'}</div></> : <div className="empty-state"><div className="empty-illustration"><CalendarDays size={28} /><span><Plus size={14} /></span></div><h3>{shifts.length ? 'No shifts match your search' : 'No shifts have been created yet.'}</h3><p>{shifts.length ? 'Try a different search or status filter.' : 'Create a shift using an event and its role requirement.'}</p>{shifts.length ? <button className="button button-secondary" type="button" onClick={() => { setSearchTerm(''); setStatusFilter('All statuses') }}>Clear filters</button> : !previewMode && <button className="button button-primary" type="button" onClick={() => setEditingShift(null)}><Plus size={17} />Create Shift</button>}</div>}
           </section>
           <footer className="page-footer">EventCrew <span>·</span> Organizer tools</footer>
         </div>
       </main>
 
       {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === 'error' ? 'alert' : 'status'}>{toast.message}</div>}
-      {editingShift !== undefined && <ShiftModal shift={editingShift} eventId={events[0]?.id ?? ''} events={events} eventsLoading={eventsLoading} eventsError={eventsError} onRetryEvents={retryEvents} isSaving={isSaving} onClose={closeEditor} onSave={saveShift} />}
-      {deletingShift && <DeleteConfirmationDialog shiftTitle={deletingShift.title} isDeleting={isDeleting} onCancel={cancelDelete} onConfirm={() => void confirmDelete()} />}
+      {!previewMode && editingShift !== undefined && <ShiftModal shift={editingShift} eventId={events[0]?.id ?? ''} events={events} eventsLoading={eventsLoading} eventsError={eventsError} onRetryEvents={retryEvents} isSaving={isSaving} onClose={closeEditor} onSave={saveShift} />}
+      {!previewMode && deletingShift && <DeleteConfirmationDialog shiftTitle={deletingShift.title} isDeleting={isDeleting} onCancel={cancelDelete} onConfirm={() => void confirmDelete()} />}
     </div>
   )
 }

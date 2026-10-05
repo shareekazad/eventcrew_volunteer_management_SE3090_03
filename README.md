@@ -66,7 +66,7 @@ Event organizers struggle to recruit, schedule, and coordinate volunteers effici
 - Layered architecture (Api / Domain / Infrastructure / Tests)
 - DTO-first API contracts (no entity leakage)
 - Business rules enforced in the service layer (status transitions, date ordering, FK validation)
-- JWT authentication (planned)
+- Demo role selection (Organizer or Volunteer) is stored locally; API endpoints do not require accounts or tokens
 - Swagger UI for interactive API exploration
 
 ### Agentic AI (LangGraph)
@@ -108,7 +108,7 @@ Full rationale in [`docs/adr/`](docs/adr/).
                       ▼
          ┌───────────────────────────┐
          │  ASP.NET Core Web API     │
-         │  (REST endpoints, JWT,    │
+         │  (anonymous REST endpoints,│
          │   business rules, audit)  │
          └──────┬──────────────┬─────┘
                 │              │
@@ -135,7 +135,7 @@ Detailed architecture: [`docs/architecture.md`](docs/architecture.md)
 The minimum acceptance workflow:
 
 1. **Organizer triggers planning** → `POST /api/Agent/plan/{eventId}` on ASP.NET Core
-2. **ASP.NET Core authorizes the event owner** and sends the minimal event, role, and venue snapshot to `POST /agent/plan`; no JWT or backend credential is forwarded
+2. **ASP.NET Core** sends the minimal event, role, and venue snapshot to `POST /agent/plan`; no JWT or backend credential is required
 3. **LangGraph orchestrates nodes:**
    - `fetch_event_node` → tool: `get_event`
    - `fetch_venue_node` → tool: `get_venue`
@@ -204,7 +204,7 @@ cd eventcrew_volunteer_management_SE3090_03
 docker compose up -d
 ```
 
-Verify 15 tables:
+Verify 14 tables:
 ```bash
 docker exec -it eventcrew-postgres psql -U eventcrew -d eventcrew_db -c "\dt"
 ```
@@ -237,7 +237,7 @@ FastAPI docs: **http://localhost:8000/docs**
 | `ConnectionStrings__EventCrew` | Postgres connection | see `appsettings.Development.json` |
 | `AiService__BaseUrl` | URL of the private Python AI service used by ASP.NET Core | `http://localhost:8000` |
 
-The Python service accepts an API-authorized event/venue snapshot. It does not
+The Python service accepts an API-supplied event/venue snapshot. It does not
 need `BACKEND_BASE_URL` and receives no JWT, password, or API credential.
 Keep its deployment private so only the ASP.NET Core API can call it.
 
@@ -251,8 +251,8 @@ Keep its deployment private so only the ASP.NET Core API can call it.
 | `/api/Venues/{id}` | GET, PUT, DELETE | Single venue operations |
 | `/api/Events` | GET, POST | List, create events |
 | `/api/Events/{id}` | GET, PUT, DELETE | Single event operations |
-| `/api/Agent/plan/{eventId}` | POST | Run event staffing proposal (Organizer/Admin; organizer ownership enforced) |
-| `/api/Agent/runs/{runId}` | GET | Retrieve the authorized workflow result and tool audit |
+| `/api/Agent/plan/{eventId}` | POST | Run event staffing proposal |
+| `/api/Agent/runs/{runId}` | GET | Retrieve the workflow result and tool audit |
 | `/api/Agent/runs/{runId}/approve` | POST | Approve an awaiting plan |
 | `/api/Agent/runs/{runId}/reject` | POST | Reject an awaiting plan with a reason |
 | `/api/Events/{id}/status` | PATCH | Status transition (validated) |
@@ -317,7 +317,7 @@ Update this section as deployment lands.
 ## Security Considerations
 
 - **No hardcoded secrets** — env vars only; `.gitignore` excludes `.env`
-- **JWT authentication** (planned) with role-based authorization
+- **Demo-only access:** role selection is stored in browser local storage; backend APIs are anonymous and are not production-secured
 - **DTO-based API contracts** — entities never leaked to clients
 - **Input validation** at DTO layer (`[Required]`, `[Range]`, `[MaxLength]`)
 - **Business rules enforced** in service layer, not controllers

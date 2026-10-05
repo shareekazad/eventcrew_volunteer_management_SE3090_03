@@ -14,7 +14,11 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    throw new InvalidOperationException("Connection string 'DefaultConnection' is required.");
+    connectionString = builder.Configuration.GetConnectionString("EventCrew");
+}
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("Connection string 'DefaultConnection' or 'EventCrew' is required.");
 }
 
 builder.Services.AddControllers();
