@@ -21,6 +21,8 @@ public class AppDbContext : DbContext
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
     public DbSet<VolunteerProfile> VolunteerProfiles => Set<VolunteerProfile>();
+    public DbSet<Skill> Skills => Set<Skill>();
+    public DbSet<VolunteerSkill> VolunteerSkills => Set<VolunteerSkill>();
     public DbSet<QrCodeToken> QrCodeTokens => Set<QrCodeToken>();
     public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
 
@@ -63,6 +65,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<QrCodeToken>()
             .HasIndex(t => t.TokenHash)
             .IsUnique();
+
+        modelBuilder.Entity<VolunteerSkill>()
+            .HasKey(skill => new { skill.VolunteerId, skill.SkillId });
 
         modelBuilder.Entity<ShiftAssignment>()
             .HasOne(a => a.Shift)

@@ -29,6 +29,9 @@ public class Shift
     [Column("end_time")]
     public DateTimeOffset EndTime { get; set; }
 
+    [Column("capacity")]
+    public int Capacity { get; set; }
+
     public ICollection<ShiftAssignment> Assignments { get; set; } = new List<ShiftAssignment>();
     public ICollection<QrCodeToken> QrCodeTokens { get; set; } = new List<QrCodeToken>();
 }

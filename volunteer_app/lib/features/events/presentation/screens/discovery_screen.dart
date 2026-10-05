@@ -4,6 +4,7 @@ import '../../data/models/event_model.dart';
 import '../../data/repositories/event_repository.dart';
 import '../widgets/event_card.dart';
 import 'event_detail_screen.dart';
+import '../../../attendance/presentation/screens/attendance_screen.dart';
 
 /// Event discovery feed — the volunteer's first screen.
 ///
@@ -23,6 +24,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   List<EventModel> _events = [];
+  int _selectedDestination = 0;
 
   @override
   void initState() {
@@ -54,16 +56,36 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Discover Events'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _loadEvents,
+        title: Text(_selectedDestination == 0 ? 'Discover Events' : 'Attendance'),
+        actions: _selectedDestination == 0
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                  onPressed: _loadEvents,
+                ),
+              ]
+            : null,
+      ),
+      body: _selectedDestination == 0 ? _buildBody() : const AttendanceScreen(),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedDestination,
+        onDestinationSelected: (index) {
+          setState(() => _selectedDestination = index);
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore),
+            label: 'Discover',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.fact_check_outlined),
+            selectedIcon: Icon(Icons.fact_check),
+            label: 'Attendance',
           ),
         ],
       ),
-      body: _buildBody(),
     );
   }
 

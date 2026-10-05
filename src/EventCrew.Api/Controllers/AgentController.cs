@@ -9,6 +9,7 @@ namespace EventCrew.Api.Controllers;
 public class AgentController : ControllerBase
 {
     private readonly IAgentService _agentService;
+    private readonly IValidationService _validationService;
     private readonly ILogger<AgentController> _logger;
 
     // Temporary: reviewer ID until JWT claims are wired in.
@@ -16,9 +17,13 @@ public class AgentController : ControllerBase
     // For now, we accept it from a header X-Reviewer-Id for testing.
     private const string ReviewerHeaderName = "X-Reviewer-Id";
 
-    public AgentController(IAgentService agentService, ILogger<AgentController> logger)
+    public AgentController(
+        IAgentService agentService,
+        IValidationService validationService,
+        ILogger<AgentController> logger)
     {
         _agentService = agentService;
+        _validationService = validationService;
         _logger = logger;
     }
 
@@ -63,6 +68,28 @@ public class AgentController : ControllerBase
     {
         var run = await _agentService.GetRunAsync(runId, cancellationToken);
         return run is null ? NotFound() : Ok(run);
+    }
+
+    /// <summary>Run deterministic business-rule validation on a proposed roster.</summary>
+    [HttpPost("runs/{runId:guid}/validate")]
+    [ProducesResponseType(typeof(ValidationReportDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ValidationReportDto>> ValidateRoster(
+        Guid runId,
+        [FromBody] ValidateRosterRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var report = await _validationService.ValidateRosterAsync(runId, dto, cancellationToken);
+            return report is null ? NotFound() : Ok(report);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Roster validation failed for workflow run {RunId}", runId);
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     // ============================================================
