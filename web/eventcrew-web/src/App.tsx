@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import AssignmentManagementPage from './pages/organizer/AssignmentManagementPage'
+import AISchedulerPage from './pages/organizer/AISchedulerPage'
 import ShiftManagementPage from './pages/organizer/ShiftManagementPage'
 import AttendanceManagementPage from './pages/organizer/AttendanceManagementPage'
 import ShiftSwapsPage from './pages/organizer/ShiftSwapsPage'
@@ -56,6 +57,8 @@ function AppContent() {
       <AttendanceManagementPage />
     ) : page === 'swaps' ? (
       <ShiftSwapsPage />
+    ) : page === 'ai-scheduler' ? (
+      <AISchedulerPage />
     ) : (
       <ShiftManagementPage />
     )}
@@ -63,12 +66,13 @@ function AppContent() {
   </>
 }
 
-function getPage(hash: string): 'shifts' | 'assignments' | 'attendance' | 'swaps' | 'login' | 'volunteer' {
+function getPage(hash: string): 'shifts' | 'assignments' | 'attendance' | 'swaps' | 'ai-scheduler' | 'login' | 'volunteer' {
   if (hash === '#login') return 'login'
   if (hash === '#volunteer') return 'volunteer'
   if (hash === '#assignments') return 'assignments'
   if (hash === '#attendance') return 'attendance'
   if (hash === '#swaps') return 'swaps'
+  if (hash === '#ai-scheduler') return 'ai-scheduler'
   return 'shifts'
 }
 
