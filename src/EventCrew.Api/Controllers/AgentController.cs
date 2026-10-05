@@ -8,6 +8,7 @@ namespace EventCrew.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Route("api/agents")]
 public class AgentController : ControllerBase
 {
     private readonly IAgentService _agentService;
@@ -44,7 +45,7 @@ public class AgentController : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // POST /api/agents/match-volunteers
+    // POST /api/Agent/match-volunteers & /api/agents/match-volunteers
     // AI Matching Gateway — React → ASP.NET Core → Python AI Microservice
     // Architecture Rule: React NEVER calls Python directly.
     // ─────────────────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ public class AgentController : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // POST /api/agents/match-volunteers/approve
+    // POST /api/Agent/match-volunteers/approve & /api/agents/match-volunteers/approve
     // Human-in-the-Loop (HITL) Approval Step — Section 9.1 & 10
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -117,7 +118,7 @@ public class AgentController : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // POST /api/agents/match-volunteers/reject
+    // POST /api/Agent/match-volunteers/reject & /api/agents/match-volunteers/reject
     // Human-in-the-Loop (HITL) Rejection Step — Section 9.1 & 10
     // ─────────────────────────────────────────────────────────────────────────
 

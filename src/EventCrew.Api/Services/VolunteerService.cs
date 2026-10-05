@@ -156,7 +156,7 @@ public class VolunteerService : IVolunteerService
         int page = 1,
         int pageSize = 20)
     {
-        var query = _db.Applications
+        IQueryable<Application> query = _db.Applications
             .AsNoTracking()
             .Where(a => a.EventId == eventId);
 
@@ -164,6 +164,11 @@ public class VolunteerService : IVolunteerService
             query = query.Where(a => a.Status == statusFilter);
 
         var applications = await query
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.User)
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.VolunteerSkills)
+                    .ThenInclude(vs => vs.Skill)
             .OrderByDescending(a => a.AppliedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -207,6 +212,7 @@ public class VolunteerService : IVolunteerService
     {
         var profile = await _db.VolunteerProfiles
             .AsNoTracking()
+            .Include(vp => vp.User)
             .Include(vp => vp.VolunteerSkills)
                 .ThenInclude(vs => vs.Skill)
             .FirstAsync(vp => vp.Id == profileId);
@@ -215,6 +221,8 @@ public class VolunteerService : IVolunteerService
         {
             Id               = profile.Id,
             UserId           = profile.UserId,
+            FullName         = profile.User?.FullName,
+            Email            = profile.User?.Email,
             EmergencyContact = profile.EmergencyContact,
             Bio              = profile.Bio,
             MaxHoursPerWeek  = profile.MaxHoursPerWeek,
@@ -240,5 +248,23 @@ public class VolunteerService : IVolunteerService
             Notes             = app.Notes,
             AppliedAt         = app.AppliedAt,
             ReviewedAt        = app.ReviewedAt,
+            Volunteer         = app.Volunteer is null ? null : new VolunteerProfileResponseDto
+            {
+                Id               = app.Volunteer.Id,
+                UserId           = app.Volunteer.UserId,
+                FullName         = app.Volunteer.User?.FullName,
+                Email            = app.Volunteer.User?.Email,
+                EmergencyContact = app.Volunteer.EmergencyContact,
+                Bio              = app.Volunteer.Bio,
+                MaxHoursPerWeek  = app.Volunteer.MaxHoursPerWeek,
+                RatingScore      = app.Volunteer.RatingScore,
+                Skills           = app.Volunteer.VolunteerSkills.Select(vs => new SkillDto
+                {
+                    Id               = vs.Skill.Id,
+                    Name             = vs.Skill.Name,
+                    Category         = vs.Skill.Category,
+                    ProficiencyLevel = vs.ProficiencyLevel,
+                }).ToList(),
+            }
         };
 }

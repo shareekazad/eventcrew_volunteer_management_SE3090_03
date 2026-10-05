@@ -39,6 +39,15 @@ class MatchingRequest(BaseModel):
         gt=0,
         description="Target number of volunteers to assign to this role (> 0)."
     )
+    candidates: list[dict] | None = Field(
+        default=None,
+        description=(
+            "Optional pre-fetched candidate list supplied by ASP.NET Core. "
+            "When provided, the agent uses these directly and skips the circular "
+            "HTTP fetch_eligible_applicants call. Each dict must contain: "
+            "volunteer_id, volunteer_name, rating_score, skills (list of str), experience_level."
+        )
+    )
 
     @field_validator("min_experience_level", mode="before")
     @classmethod
@@ -52,6 +61,7 @@ class MatchingRequest(BaseModel):
             if val_lower == "advanced":
                 return "Advanced"
         return value
+
 
 
 class CandidateMatch(BaseModel):

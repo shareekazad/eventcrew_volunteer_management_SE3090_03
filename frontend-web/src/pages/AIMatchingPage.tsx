@@ -275,31 +275,26 @@ export const AIMatchingPage: React.FC = () => {
   const isHITLVisible = showResults && approvalStatus === 'PendingApproval';
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* ── Page Header ── */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-indigo-500 flex items-center justify-center text-white shadow-md">
-            <Cpu className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              AI Staffing &amp; Matching Hub
-            </h1>
-            <p className="text-sm text-slate-500">
-              Autonomous volunteer matching powered by the <strong>Volunteer Matching Agent</strong>{' '}
-              (Section 9.1 · Human-in-the-Loop)
-            </p>
-          </div>
+      <div>
+        <div className="text-[11px] font-bold tracking-wider uppercase text-[#6B8E81] mb-1">
+          AI Staffing &amp; Recruitment
         </div>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+          AI Staffing &amp; Matching Hub
+        </h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Autonomous volunteer matching powered by the <strong>Volunteer Matching Agent</strong> (Section 9.1 · Human-in-the-Loop).
+        </p>
       </div>
 
       {/* ── Architecture Badge ── */}
-      <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-50 border border-indigo-100 text-xs text-indigo-700 font-medium mb-6 w-fit">
-        <Info className="w-4 h-4 text-indigo-500" />
+      <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200 text-xs text-slate-600 font-medium w-fit">
+        <Info className="w-4 h-4 text-[#0F382C]" />
         Architecture: React → ASP.NET Core Gateway (
         <code className="font-mono">/api/agents/match-volunteers</code>) → Python AI Microservice
-        (localhost:8000) — React never calls Python directly.
+        (localhost:8000)
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -308,9 +303,9 @@ export const AIMatchingPage: React.FC = () => {
             ════════════════════════════════════════════════════════ */}
         <div className="xl:col-span-1 space-y-4">
           {/* Role Selection Card */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm">
             <h2 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-md bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center">1</span>
+              <span className="w-6 h-6 rounded-md bg-[#0F382C] text-mint text-xs font-bold flex items-center justify-center">1</span>
               Role Configuration
             </h2>
 
@@ -393,8 +388,8 @@ export const AIMatchingPage: React.FC = () => {
                       onClick={() => toggleSkill(skill)}
                       className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${
                         active
-                          ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-brand-400 hover:text-brand-700'
+                          ? 'bg-[#0F382C] text-white border-[#0F382C] shadow-sm'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-[#0F382C] hover:text-[#0F382C]'
                       }`}
                     >
                       {active ? '✓ ' : ''}{skill}
@@ -410,11 +405,11 @@ export const AIMatchingPage: React.FC = () => {
             id="run-matching-btn"
             onClick={runMatching}
             disabled={!canRunMatching}
-            className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2.5 shadow-lg ${
+            className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2.5 shadow-md ${
               isMatching
-                ? 'bg-brand-500 text-white cursor-wait animate-pulse'
+                ? 'bg-[#1C4B3D] text-white cursor-wait animate-pulse'
                 : canRunMatching
-                ? 'bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-700 hover:to-indigo-700 text-white hover:shadow-brand-500/40 active:scale-95'
+                ? 'bg-[#0F382C] hover:bg-[#163D30] text-white hover:shadow-lg active:scale-95'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
             }`}
           >
