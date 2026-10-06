@@ -23,36 +23,36 @@ export const ApplicantTable: React.FC<ApplicantTableProps> = ({ applicants }) =>
     switch (status) {
       case 'Submitted':
         return (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5"></span>
-            Submitted
+          <span className="inline-flex items-center text-xs font-medium text-slate-700">
+            <span className="w-2 h-2 rounded-full bg-amber-500 mr-2 shrink-0"></span>
+            Pending Organizer
           </span>
         );
       case 'UnderReview':
         return (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5"></span>
+          <span className="inline-flex items-center text-xs font-medium text-slate-700">
+            <span className="w-2 h-2 rounded-full bg-blue-500 mr-2 shrink-0"></span>
             Under Review
           </span>
         );
       case 'Shortlisted':
         return (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 mr-1.5"></span>
+          <span className="inline-flex items-center text-xs font-medium text-slate-700">
+            <span className="w-2 h-2 rounded-full bg-purple-500 mr-2 shrink-0"></span>
             Shortlisted
           </span>
         );
       case 'Accepted':
         return (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-            Accepted
+          <span className="inline-flex items-center text-xs font-medium text-slate-700">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2 shrink-0"></span>
+            Approved
           </span>
         );
       case 'Rejected':
         return (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <XCircle className="w-3.5 h-3.5 mr-1 text-rose-600" />
+          <span className="inline-flex items-center text-xs font-medium text-slate-700">
+            <span className="w-2 h-2 rounded-full bg-rose-500 mr-2 shrink-0"></span>
             Rejected
           </span>
         );
@@ -112,18 +112,17 @@ export const ApplicantTable: React.FC<ApplicantTableProps> = ({ applicants }) =>
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              <th className="py-3.5 px-5">Volunteer</th>
-              <th className="py-3.5 px-4">Applied Date</th>
-              <th className="py-3.5 px-4">Skills & Rating</th>
-              <th className="py-3.5 px-4">Status</th>
-              <th className="py-3.5 px-5 text-right">Actions</th>
-            </tr>
-          </thead>
+    <div className="overflow-x-auto -mx-6 mt-4 border-t border-slate-100">
+      <table className="w-full text-left border-collapse text-xs">
+        <thead>
+          <tr className="border-b border-slate-100 text-slate-400 font-medium">
+            <th className="py-3 px-6">Volunteer</th>
+            <th className="py-3 px-4">Applied Date</th>
+            <th className="py-3 px-4">Skills &amp; Rating</th>
+            <th className="py-3 px-4">Status</th>
+            <th className="py-3 px-6 text-right">Actions</th>
+          </tr>
+        </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
             {applicants.map((app) => {
               const volunteer = app.volunteer;
@@ -266,6 +265,5 @@ export const ApplicantTable: React.FC<ApplicantTableProps> = ({ applicants }) =>
           </tbody>
         </table>
       </div>
-    </div>
-  );
+    );
 };

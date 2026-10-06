@@ -1,29 +1,34 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Layers, Users, Cpu, Radio, Shield, Menu, X } from 'lucide-react';
-import { DEMO_ORGANIZER_TOKEN } from '../services/api';
+import { Layers, Radio, Shield, Menu, X } from 'lucide-react';
+import { getDevOrganizerToken } from '../services/api';
+import { useApplicationStore } from '../stores/applicationStore';
 
 export const Navbar: React.FC = () => {
   const [tokenCopied, setTokenCopied] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const fetchApplicants = useApplicationStore((state) => state.fetchApplicants);
 
   const copyToken = () => {
-    navigator.clipboard.writeText(DEMO_ORGANIZER_TOKEN);
+    const token = getDevOrganizerToken();
+    localStorage.setItem('token', token);
+    navigator.clipboard.writeText(token);
     setTokenCopied(true);
     setTimeout(() => setTokenCopied(false), 2000);
+    fetchApplicants();
   };
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+    `flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
       isActive
-        ? 'bg-brand-600 text-white shadow-md shadow-brand-500/30'
+        ? 'bg-brand-600 text-white shadow-md shadow-brand-500/30 ring-2 ring-brand-400/20'
         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
     }`;
 
   return (
     <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand Logo */}
+        {/* Brand Logo & Event Selector */}
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
             <Layers className="w-5 h-5" />
@@ -39,17 +44,25 @@ export const Navbar: React.FC = () => {
               Volunteer Lifecycle &amp; AI Staffing Management
             </p>
           </div>
+
+          {/* Event Selector Pill */}
+          <div className="hidden lg:flex items-center gap-1.5 ml-4 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-xs font-bold text-amber-900 shadow-sm">
+            <span>🎪 TechFest 2026</span>
+          </div>
         </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden md:flex items-center gap-2">
           <NavLink to="/applicants" className={navLinkClass}>
-            <Users className="w-4 h-4" />
-            Applicant Queue
+            <span>📋 Applicant Queue</span>
           </NavLink>
           <NavLink to="/ai-matching" className={navLinkClass}>
-            <Cpu className="w-4 h-4" />
-            AI Staffing Hub
+            <span className="flex items-center gap-1.5">
+              <span>✨ AI Staffing Agent</span>
+              <span className="px-1.5 py-0.5 text-[10px] uppercase font-extrabold tracking-wider rounded-md bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm">
+                AI
+              </span>
+            </span>
           </NavLink>
         </nav>
 
@@ -95,22 +108,28 @@ export const Navbar: React.FC = () => {
 
       {/* Mobile Drawer */}
       {mobileOpen && (
-        <div className="md:hidden border-t border-slate-200 bg-white px-4 py-3 space-y-1 shadow-lg">
+        <div className="md:hidden border-t border-slate-200 bg-white px-4 py-3 space-y-2 shadow-lg">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-xs font-bold text-amber-900 w-fit mb-2">
+            <span>🎪 TechFest 2026</span>
+          </div>
           <NavLink
             to="/applicants"
             className={navLinkClass}
             onClick={() => setMobileOpen(false)}
           >
-            <Users className="w-4 h-4" />
-            Applicant Queue
+            <span>📋 Applicant Queue</span>
           </NavLink>
           <NavLink
             to="/ai-matching"
             className={navLinkClass}
             onClick={() => setMobileOpen(false)}
           >
-            <Cpu className="w-4 h-4" />
-            AI Staffing Hub
+            <span className="flex items-center gap-1.5">
+              <span>✨ AI Staffing Agent</span>
+              <span className="px-1.5 py-0.5 text-[10px] uppercase font-extrabold tracking-wider rounded-md bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm">
+                AI
+              </span>
+            </span>
           </NavLink>
           <div className="pt-2 mt-2 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-500">
             <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />

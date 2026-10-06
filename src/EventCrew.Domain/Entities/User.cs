@@ -29,6 +29,17 @@ public class User
     [Column("role")]
     public string Role { get; set; } = "Volunteer";
 
+    [Required]
+    [Column("password_hash")]
+    public string PasswordHash { get; set; } = "hashed_default_password_dev_123";
+
+    [Column("phone_number")]
+    [MaxLength(20)]
+    public string? PhoneNumber { get; set; } = "0771234567";
+
+    [Column("is_active")]
+    public bool IsActive { get; set; } = true;
+
     // Reverse navigation - Student 1: Organized events
     public ICollection<Event> OrganizedEvents { get; set; } = new List<Event>();
 

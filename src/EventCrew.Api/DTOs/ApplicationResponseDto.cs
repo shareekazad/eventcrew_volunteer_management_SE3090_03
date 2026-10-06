@@ -20,4 +20,7 @@ public class ApplicationResponseDto
 
     /// <summary>UTC timestamp of last organizer review, if any.</summary>
     public DateTime? ReviewedAt { get; set; }
+
+    /// <summary>Nested volunteer profile details including full name, email, rating, and skills.</summary>
+    public VolunteerProfileResponseDto? Volunteer { get; set; }
 }

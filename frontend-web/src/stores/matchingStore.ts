@@ -140,7 +140,7 @@ export const useMatchingStore = create<MatchingState>((set, get) => ({
       };
 
       const response = await apiClient.post<MatchingResponse>(
-        '/agents/match-volunteers',
+        '/Agent/match-volunteers',
         payload
       );
 
@@ -168,7 +168,7 @@ export const useMatchingStore = create<MatchingState>((set, get) => ({
   approveProposal: async (workflowRunId?: string) => {
     set({ approvalStatus: 'Approved', error: null });
     try {
-      await apiClient.post('/agents/match-volunteers/approve', {
+      await apiClient.post('/Agent/match-volunteers/approve', {
         workflowRunId: workflowRunId ?? get().matchingResult?.workflow_run_id ?? null,
         organizerNotes: 'Approved via Organizer Hub',
       });
@@ -190,7 +190,7 @@ export const useMatchingStore = create<MatchingState>((set, get) => ({
   rejectProposal: async (workflowRunId?: string, reason?: string) => {
     set({ approvalStatus: 'Rejected', error: null });
     try {
-      await apiClient.post('/agents/match-volunteers/reject', {
+      await apiClient.post('/Agent/match-volunteers/reject', {
         workflowRunId: workflowRunId ?? get().matchingResult?.workflow_run_id ?? null,
         reason: reason || 'Rejected by organizer',
       });

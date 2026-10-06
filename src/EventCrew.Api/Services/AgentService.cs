@@ -15,7 +15,7 @@ namespace EventCrew.Api.Services;
 ///    full 4-agent workflow (/workflow/plan).
 /// 2. Persist workflow runs and every tool call as an audit trail.
 /// 3. Manage human approval: approve / reject with audit info + email.
-/// 4. Return structured DTOs to the controller.
+/// 4. Volunteer matching gateway for Student 2's matching agent.
 /// </summary>
 public class AgentService : IAgentService
 {
@@ -208,7 +208,7 @@ public class AgentService : IAgentService
     }
 
     // ============================================================
-    // VOLUNTEER MATCHING WORKFLOW (Student 2) — direct proxy
+    // VOLUNTEER MATCHING WORKFLOW (Student 2)
     // ============================================================
     public async Task<MatchingResponseDto> MatchVolunteersAsync(
         MatchingRequestDto request,
@@ -219,11 +219,64 @@ public class AgentService : IAgentService
             "Proxying volunteer matching request for event {EventId}, role '{Role}'",
             request.EventId, request.RoleName);
 
+        // 1. Fetch applicants from DB and pre-load skills + user names
+        var applications = await _db.Applications
+            .Where(a => a.EventId == request.EventId)
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.User)
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.VolunteerSkills)
+                    .ThenInclude(vs => vs.Skill)
+            .ToListAsync(cancellationToken);
+
+        var candidateList = applications.Select(a =>
+        {
+            var profile = a.Volunteer;
+            var user = profile?.User;
+
+            var skills = profile?.VolunteerSkills
+                .Select(vs => vs.Skill?.Name ?? "")
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList() ?? new List<string>();
+
+            var highestProficiency = profile?.VolunteerSkills
+                .Select(vs => vs.ProficiencyLevel)
+                .OrderByDescending(p => p == "Advanced" ? 3 : p == "Intermediate" ? 2 : 1)
+                .FirstOrDefault() ?? "Intermediate";
+
+            var name = user?.FullName ?? a.VolunteerId.ToString();
+
+            return new Dictionary<string, object?>
+            {
+                ["volunteer_id"] = a.VolunteerId.ToString(),
+                ["volunteer_name"] = name,
+                ["rating_score"] = (double)(profile?.RatingScore ?? 4.0m),
+                ["skills"] = skills,
+                ["experience_level"] = highestProficiency,
+            };
+        }).ToList();
+
+        _logger.LogInformation(
+            "Passing {Count} pre-fetched candidates to Python AI for event {EventId}",
+            candidateList.Count, request.EventId.ToString());
+
+        // 2. Build the Python payload
+        var pythonPayload = new
+        {
+            event_id = request.EventId,
+            role_name = request.RoleName,
+            required_skills = request.RequiredSkills,
+            min_experience_level = request.MinExperienceLevel,
+            required_headcount = request.RequiredHeadcount,
+            candidates = candidateList,
+        };
+
         MatchingResponseDto matchingResult;
 
+        // 3. Try the Python AI microservice
         try
         {
-            var body = JsonSerializer.Serialize(request, JsonOptions);
+            var body = JsonSerializer.Serialize(pythonPayload, JsonOptions);
             using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
             var response = await _http.PostAsync(
@@ -239,23 +292,24 @@ public class AgentService : IAgentService
             else
             {
                 _logger.LogWarning(
-                    "Python AI service returned {Status} for matching. Using fallback.",
+                    "Python AI service returned {Status} for matching. Using C# fallback scorer.",
                     response.StatusCode);
-                matchingResult = BuildFallbackMatchingResponse(request);
+                matchingResult = BuildFallbackMatchingResponse(request, candidateList);
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            _logger.LogWarning(ex, "Python AI service unreachable. Using graceful fallback for matching.");
-            matchingResult = BuildFallbackMatchingResponse(request);
+            _logger.LogWarning(ex, "Python AI service unreachable. Using C# fallback scorer.");
+            matchingResult = BuildFallbackMatchingResponse(request, candidateList);
         }
 
+        // 4. Persist a workflow run record
         var run = new AgentWorkflowRun
         {
             Id = matchingResult.WorkflowId == Guid.Empty ? Guid.NewGuid() : matchingResult.WorkflowId,
             EventId = request.EventId,
             InitiatedByUserId = initiatedByUserId,
-            Status = "Completed",
+            Status = "AwaitingApproval",
             PromptObjective = $"Match volunteers for role '{request.RoleName}' (headcount: {request.RequiredHeadcount})",
             GeneratedRosterProposal = JsonSerializer.Serialize(matchingResult, JsonOptions),
             CreatedAt = DateTimeOffset.UtcNow,
@@ -442,51 +496,94 @@ public class AgentService : IAgentService
         UpdatedAt = run.UpdatedAt
     };
 
-    private static MatchingResponseDto BuildFallbackMatchingResponse(MatchingRequestDto request)
+    /// <summary>
+    /// Deterministic fallback scorer (Section 9.1): 60% skills + 30% rating + 10% experience tier.
+    /// Used when the Python AI service is unreachable or returns an error.
+    /// </summary>
+    private static MatchingResponseDto BuildFallbackMatchingResponse(
+        MatchingRequestDto request,
+        List<Dictionary<string, object?>>? candidates = null)
     {
-        var skillsRequired = request.RequiredSkills.Count > 0
-            ? request.RequiredSkills
-            : new List<string> { "First Aid", "Communication" };
-
-        var candidates = new List<CandidateMatchDto>
-        {
-            new()
-            {
-                VolunteerId = Guid.Parse("c1000000-0000-0000-0000-000000000001"),
-                VolunteerName = "Sarah Jenkins",
-                MatchScore = 96.5,
-                MatchingSkills = skillsRequired.Take(Math.Min(skillsRequired.Count, 2)).ToList(),
-                ExperienceLevel = request.MinExperienceLevel == "Advanced" ? "Advanced" : "Intermediate",
-                RatingScore = 4.95,
-                Justification = "Strong candidate with high skill overlap, rating 4.95/5.0.",
-            },
-            new()
-            {
-                VolunteerId = Guid.Parse("c1000000-0000-0000-0000-000000000002"),
-                VolunteerName = "David Chen",
-                MatchScore = 82.0,
-                MatchingSkills = skillsRequired.Take(Math.Min(skillsRequired.Count, 1)).ToList(),
-                ExperienceLevel = "Intermediate",
-                RatingScore = 4.80,
-                Justification = "Qualified candidate with partial skill overlap.",
-            },
-            new()
-            {
-                VolunteerId = Guid.Parse("c1000000-0000-0000-0000-000000000003"),
-                VolunteerName = "Elena Rostova",
-                MatchScore = 74.5,
-                MatchingSkills = skillsRequired.Take(1).ToList(),
-                ExperienceLevel = "Intermediate",
-                RatingScore = 4.70,
-                Justification = "Good candidate with communication background.",
-            },
-        };
-
         var headcountNeeded = Math.Max(1, request.RequiredHeadcount);
-        var matched = candidates.Take(headcountNeeded).ToList();
-        var status = matched.Count >= headcountNeeded ? "SUCCESS"
-            : matched.Count > 0 ? "PARTIAL_MATCH"
-            : "SAFE_FAILURE";
+        var requiredSkills = request.RequiredSkills ?? new List<string>();
+        var minTier = request.MinExperienceLevel?.Trim().ToLowerInvariant() ?? "beginner";
+
+        var scoredCandidates = new List<CandidateMatchDto>();
+
+        if (candidates != null && candidates.Count > 0)
+        {
+            foreach (var c in candidates)
+            {
+                var volId = Guid.TryParse(c["volunteer_id"]?.ToString(), out var parsedId)
+                    ? parsedId : Guid.NewGuid();
+                var name = c["volunteer_name"]?.ToString() ?? "Volunteer";
+                var rating = c.TryGetValue("rating_score", out var rObj) && rObj is double rVal
+                    ? rVal : 4.5;
+                var experience = c.TryGetValue("experience_level", out var eObj)
+                    ? eObj?.ToString() ?? "Intermediate" : "Intermediate";
+                var volSkills = (c["skills"] as IEnumerable<string>)?.ToList()
+                    ?? (c["skills"] as IEnumerable<object>)?.Select(s => s?.ToString() ?? "").ToList()
+                    ?? new List<string>();
+
+                var matchingSkills = requiredSkills.Count > 0
+                    ? volSkills.Where(s => requiredSkills.Any(rs => string.Equals(rs, s, StringComparison.OrdinalIgnoreCase))).ToList()
+                    : volSkills.Take(2).ToList();
+
+                double skillOverlapRatio = requiredSkills.Count > 0
+                    ? (double)matchingSkills.Count / requiredSkills.Count
+                    : 1.0;
+
+                // Guardrail: 0% skill match cannot be assigned to Advanced role
+                if (minTier == "advanced" && requiredSkills.Count > 0 && matchingSkills.Count == 0)
+                    continue;
+
+                double skillsScore = skillOverlapRatio * 100.0;
+                double ratingScore = (rating / 5.0) * 100.0;
+                int tierValue = experience.Trim().ToLowerInvariant() switch
+                {
+                    "advanced" => 3,
+                    "intermediate" => 2,
+                    _ => 1
+                };
+                int minTierValue = minTier switch
+                {
+                    "advanced" => 3,
+                    "intermediate" => 2,
+                    _ => 1
+                };
+                double tierScore = tierValue >= minTierValue ? 100.0 : 50.0;
+
+                double compositeScore = Math.Round(
+                    (0.60 * skillsScore) + (0.30 * ratingScore) + (0.10 * tierScore), 1);
+
+                string justification = requiredSkills.Count > 0
+                    ? $"Qualified candidate with {(int)(skillOverlapRatio * 100)}% required skill overlap ({string.Join(", ", matchingSkills)}), past rating {rating:F1}/5.0, and {experience} experience tier for '{request.RoleName}'."
+                    : $"Candidate assigned based on past rating {rating:F1}/5.0 and {experience} experience tier.";
+
+                scoredCandidates.Add(new CandidateMatchDto
+                {
+                    VolunteerId = volId,
+                    VolunteerName = name,
+                    MatchScore = compositeScore,
+                    MatchingSkills = matchingSkills,
+                    ExperienceLevel = experience,
+                    RatingScore = rating,
+                    Justification = justification
+                });
+            }
+
+            scoredCandidates = scoredCandidates
+                .OrderByDescending(c => c.MatchScore)
+                .ThenByDescending(c => c.RatingScore)
+                .ToList();
+        }
+
+        var matched = scoredCandidates.Take(headcountNeeded).ToList();
+        var status = matched.Count == 0
+            ? "SAFE_FAILURE"
+            : matched.Count < headcountNeeded
+                ? "PARTIAL_MATCH"
+                : "SUCCESS";
 
         return new MatchingResponseDto
         {
@@ -495,7 +592,7 @@ public class AgentService : IAgentService
             HeadcountNeeded = headcountNeeded,
             MatchedCandidates = matched,
             UnfulfilledSlots = Math.Max(0, headcountNeeded - matched.Count),
-            ExecutionTimeMs = 38,
+            ExecutionTimeMs = 25,
             Status = status,
             IsFallback = true,
         };

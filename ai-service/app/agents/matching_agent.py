@@ -110,9 +110,23 @@ class VolunteerMatchingAgent:
 
         # -------------------------------------------------------------------
         # Tool 1: Fetch eligible applicants
+        # If ASP.NET Core already supplied candidates, use them directly to avoid
+        # the circular HTTP call (Python → ASP.NET Core → 401 Unauthorized loop).
         # -------------------------------------------------------------------
         t_tool1_start = time.perf_counter()
-        raw_applicants = await fetch_eligible_applicants(event_id_str, mock_applicants)
+
+        if request.candidates is not None:
+            # Candidates supplied by ASP.NET Core gateway — skip HTTP fetch
+            raw_applicants = request.candidates
+            logger.info(
+                "Using %d pre-fetched candidates supplied by ASP.NET Core for event=%s",
+                len(raw_applicants), event_id_str
+            )
+        elif mock_applicants is not None:
+            raw_applicants = mock_applicants
+        else:
+            raw_applicants = await fetch_eligible_applicants(event_id_str, None)
+
         t_tool1_duration = int((time.perf_counter() - t_tool1_start) * 1000)
 
         log_agent_observability(
