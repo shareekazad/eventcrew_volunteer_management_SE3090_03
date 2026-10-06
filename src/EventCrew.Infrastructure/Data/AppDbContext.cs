@@ -6,7 +6,8 @@ namespace EventCrew.Infrastructure.Data;
 /// <summary>
 /// EF Core database context for the EventCrew application.
 /// Targets PostgreSQL via Npgsql.
-/// Combines models from Student 1 (Events & Venues), Student 2 (Volunteers & Applications), and shared infrastructure.
+/// Combines models from Student 1 (Events & Venues), Student 2 (Volunteers & Applications),
+/// Student 3 (Shifts), Student 4 (Attendance), and shared infrastructure.
 /// </summary>
 public class AppDbContext : DbContext
 {
@@ -15,7 +16,7 @@ public class AppDbContext : DbContext
     {
     }
 
-    // ---- Student 1 (Event & Venue) ----
+    // ---- Student 1: Events & Venues ----
     public DbSet<Venue> Venues => Set<Venue>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<RoleRequirement> RoleRequirements => Set<RoleRequirement>();
@@ -25,6 +26,14 @@ public class AppDbContext : DbContext
     public DbSet<Skill> Skills => Set<Skill>();
     public DbSet<VolunteerSkill> VolunteerSkills => Set<VolunteerSkill>();
     public DbSet<Application> Applications => Set<Application>();
+
+    // ---- Student 3: Shifts ----
+    public DbSet<Shift> Shifts => Set<Shift>();
+    public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
+
+    // ---- Student 4: Attendance & QR ----
+    public DbSet<QrCodeToken> QrCodeTokens => Set<QrCodeToken>();
+    public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
 
     // ---- Shared AI workflow state ----
     public DbSet<AgentWorkflowRun> AgentWorkflowRuns => Set<AgentWorkflowRun>();
@@ -37,15 +46,12 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // ── Student 1: Enums & Mappings ───────────────────────────────────────
-        // Store enums as their string names in the DB (matches DDL: 'Draft', 'Beginner', etc.)
-        modelBuilder
-            .Entity<Event>()
+        // ── Student 1: Enum conversions ───────────────────────────────────────
+        modelBuilder.Entity<Event>()
             .Property(e => e.Status)
             .HasConversion<string>();
 
-        modelBuilder
-            .Entity<RoleRequirement>()
+        modelBuilder.Entity<RoleRequirement>()
             .Property(r => r.MinExperienceLevel)
             .HasConversion<string>();
 
@@ -58,8 +64,6 @@ public class AppDbContext : DbContext
             e.Property(s => s.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
             e.Property(s => s.Category).HasColumnName("category").HasMaxLength(50).IsRequired();
             e.Property(s => s.Description).HasColumnName("description");
-
-            // Name must be unique (matches DB schema)
             e.HasIndex(s => s.Name).IsUnique();
         });
 
@@ -81,10 +85,8 @@ public class AppDbContext : DbContext
                 .HasColumnName("updated_at")
                 .HasDefaultValueSql("now() AT TIME ZONE 'utc'");
 
-            // Each user can have exactly one volunteer profile
             e.HasIndex(vp => vp.UserId).IsUnique();
 
-            // FK: VolunteerProfile → User
             e.HasOne(vp => vp.User)
                 .WithOne(u => u.VolunteerProfile)
                 .HasForeignKey<VolunteerProfile>(vp => vp.UserId)
@@ -95,8 +97,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<VolunteerSkill>(e =>
         {
             e.ToTable("volunteer_skills");
-
-            // Composite primary key
             e.HasKey(vs => new { vs.VolunteerId, vs.SkillId });
 
             e.Property(vs => vs.VolunteerId).HasColumnName("volunteer_id");
@@ -106,13 +106,11 @@ public class AppDbContext : DbContext
                 .HasMaxLength(20)
                 .HasDefaultValue("Intermediate");
 
-            // FK: VolunteerSkill → VolunteerProfile
             e.HasOne(vs => vs.Volunteer)
                 .WithMany(vp => vp.VolunteerSkills)
                 .HasForeignKey(vs => vs.VolunteerId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // FK: VolunteerSkill → Skill
             e.HasOne(vs => vs.Skill)
                 .WithMany(s => s.VolunteerSkills)
                 .HasForeignKey(vs => vs.SkillId)
@@ -141,28 +139,60 @@ public class AppDbContext : DbContext
                 .HasColumnName("updated_at")
                 .HasDefaultValueSql("now() AT TIME ZONE 'utc'");
 
-            // UNIQUE constraint: one application per volunteer per event (matches DB schema)
             e.HasIndex(a => new { a.EventId, a.VolunteerId })
                 .IsUnique()
                 .HasDatabaseName("uq_event_volunteer_app");
 
-            // FK: Application → Event
             e.HasOne(a => a.Event)
                 .WithMany(ev => ev.Applications)
                 .HasForeignKey(a => a.EventId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // FK: Application → VolunteerProfile
             e.HasOne(a => a.Volunteer)
                 .WithMany(vp => vp.Applications)
                 .HasForeignKey(a => a.VolunteerId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // FK: Application → RoleRequirement (optional)
             e.HasOne(a => a.RoleRequirement)
                 .WithMany(r => r.Applications)
                 .HasForeignKey(a => a.RoleRequirementId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
+
+        // ── Student 4: Attendance & QR ────────────────────────────────────────
+        modelBuilder
+            .Entity<AttendanceRecord>()
+            .Property(a => a.Status)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasIndex(a => new { a.ShiftId, a.VolunteerId })
+            .IsUnique();
+
+        modelBuilder.Entity<AttendanceRecord>()
+            .HasIndex(a => a.ShiftAssignmentId)
+            .IsUnique();
+
+        modelBuilder.Entity<QrCodeToken>()
+            .HasIndex(t => t.TokenHash)
+            .IsUnique();
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasOne(a => a.Shift)
+            .WithMany(s => s.Assignments)
+            .HasForeignKey(a => a.ShiftId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasOne(a => a.AttendanceRecord)
+            .WithOne(a => a.ShiftAssignment)
+            .HasForeignKey<AttendanceRecord>(a => a.ShiftAssignmentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QrCodeToken>()
+            .HasOne(t => t.Shift)
+            .WithMany(s => s.QrCodeTokens)
+            .HasForeignKey(t => t.ShiftId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

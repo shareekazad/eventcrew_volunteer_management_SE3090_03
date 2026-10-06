@@ -66,6 +66,7 @@ Event organizers struggle to recruit, schedule, and coordinate volunteers effici
 - Layered architecture (Api / Domain / Infrastructure / Tests)
 - DTO-first API contracts (no entity leakage)
 - Business rules enforced in the service layer (status transitions, date ordering, FK validation)
+- QR-token check-in/check-out, attendance monitoring, statistics, and volunteer attendance history
 - JWT authentication (planned)
 - Swagger UI for interactive API exploration
 
@@ -143,7 +144,10 @@ The minimum acceptance workflow:
    - `build_plan_node` → assembles structured plan, delegates to MatchingAgent
 4. **Graph short-circuits to END on any node failure** (conditional edges)
 5. **Python returns `PlanResult`** → ASP.NET Core persists to `agent_workflow_runs` + `agent_tool_logs`
-6. **Organizer reviews and approves** (human-in-the-loop — Section 9.1)
+6. **Organizer submits a roster proposal for deterministic validation** → `POST /api/Agent/runs/{runId}/validate`; the Validation Agent checks role headcount, shift capacity and times, shift/event membership, duplicate assignments, declared required skills, and overlapping shifts, then persists the proposal and rule-specific report.
+7. **Organizer reviews and approves** (human-in-the-loop — Section 9.1)
+
+The validator is a deterministic ASP.NET Core service; it does not call the PlanningAgent, an LLM, or the Python service. Required skill names are supplied by the proposed roster because the current database schema does not associate required skills with role requirements.
 
 **Agentic evidence:** structured plan, distinct agent roles, allow-listed tools, persisted state, deterministic validation (DB-level constraints + service-layer business rules), audit trail, safe failure.
 
