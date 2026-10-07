@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../auth/token_storage.dart';
 import '../config/api_config.dart';
 
 /// Thrown when an API request fails.
@@ -19,24 +20,26 @@ class ApiException implements Exception {
 ///
 /// Responsibilities:
 /// - Attach common headers (JSON)
+/// - Attach the JWT Authorization header when a token is stored
 /// - Enforce a timeout
 /// - Translate HTTP errors into typed exceptions
 /// - Decode JSON responses
-///
-/// The client is intentionally stateless — no auth token yet.
-/// When JWT auth lands, this is where the Authorization header will be added.
 class ApiClient {
-  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+  ApiClient({http.Client? client, TokenStorage? tokenStorage})
+      : _client = client ?? http.Client(),
+        _tokenStorage = tokenStorage ?? TokenStorage();
 
   final http.Client _client;
+  final TokenStorage _tokenStorage;
 
   /// GET request. Returns a decoded JSON map or list.
   Future<dynamic> get(String path) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
 
     try {
+      final headers = await _buildHeaders();
       final response = await _client
-          .get(uri, headers: _headers)
+          .get(uri, headers: headers)
           .timeout(ApiConfig.requestTimeout);
 
       return _handleResponse(response);
@@ -52,10 +55,11 @@ class ApiClient {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
 
     try {
+      final headers = await _buildHeaders();
       final response = await _client
           .post(
             uri,
-            headers: _headers,
+            headers: headers,
             body: body == null ? null : jsonEncode(body),
           )
           .timeout(ApiConfig.requestTimeout);
@@ -68,11 +72,20 @@ class ApiClient {
     }
   }
 
-  /// Common headers for every request.
-  static const Map<String, String> _headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
+  /// Builds request headers, adding the bearer token if one is stored.
+  Future<Map<String, String>> _buildHeaders() async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    final token = await _tokenStorage.readToken();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    return headers;
+  }
 
   /// Validates the response and returns decoded JSON.
   dynamic _handleResponse(http.Response response) {

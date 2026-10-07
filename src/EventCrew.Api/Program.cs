@@ -46,6 +46,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<IVenueService, VenueService>();
 builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<IVolunteerService, VolunteerService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAttendanceService, AttendanceService>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
 
@@ -116,7 +117,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// Only redirect to HTTPS in production.
+// In dev, the API runs on HTTP only — redirecting breaks Flutter web,
+// React on localhost, and Swagger.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseCors("AllowFrontends");
 
