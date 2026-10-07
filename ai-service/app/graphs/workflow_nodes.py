@@ -111,7 +111,7 @@ async def plan_node(state: WorkflowState) -> dict:
         "called_at": _now_iso(),
     })
 
-    # Build plan steps (same structure as before)
+    # Build plan steps
     plan_steps = [
         {"step_number": 1, "action": f"Fetch event '{event.title}'",
          "tool": "get_event", "agent": "PlanningAgent", "status": "planned"},
@@ -149,7 +149,8 @@ async def match_node(state: WorkflowState) -> dict:
     """
     Node 2 — Runs the MatchingAgent for each role requirement.
 
-    For each role in the event, calls the agent to rank candidates.
+    Uses the pre-fetched candidates supplied by ASP.NET Core in state.candidates
+    to avoid Python making a circular HTTP call (which would fail with 401).
     Populates: matching_results (one entry per role)
     """
     traces = list(state.agent_traces)
@@ -165,19 +166,19 @@ async def match_node(state: WorkflowState) -> dict:
     total_matched = 0
     total_needed = 0
 
-    # Iterate over each role requirement
+    # Pass the pre-fetched candidates (or None if empty) to the agent
+    candidates = state.candidates if state.candidates else None
+
     for role in state.event.role_requirements:
         t = time.perf_counter()
 
-        # Build matching request for this role
-        # Note: roles don't have required_skills in our schema yet —
-        # pass empty list, agent handles it
         request = MatchingRequest(
             event_id=state.event.id,
             role_name=role.role_name,
             required_skills=[],
             min_experience_level=role.min_experience_level,
             required_headcount=role.required_headcount,
+            candidates=candidates,
         )
 
         try:
@@ -195,6 +196,7 @@ async def match_node(state: WorkflowState) -> dict:
                 "input_params": {
                     "role_name": role.role_name,
                     "headcount": role.required_headcount,
+                    "candidates_supplied": len(candidates) if candidates else 0,
                 },
                 "output_summary": {
                     "status": result.status,
@@ -215,8 +217,6 @@ async def match_node(state: WorkflowState) -> dict:
                 "duration_ms": duration_ms,
                 "called_at": _now_iso(),
             })
-            # Matching failure doesn't fail the whole workflow —
-            # we record it and continue with empty matches for this role
             matching_results.append({
                 "role_name": role.role_name,
                 "status": "SAFE_FAILURE",
@@ -240,7 +240,6 @@ async def match_node(state: WorkflowState) -> dict:
 async def schedule_node(state: WorkflowState) -> dict:
     """
     Node 3 — Runs the SchedulingAgent.
-
     Populates: proposed_shifts, shift_conflicts
     """
     agent = SchedulingAgent()
@@ -255,7 +254,6 @@ async def schedule_node(state: WorkflowState) -> dict:
 async def validate_node(state: WorkflowState) -> dict:
     """
     Node 4 — Runs the ValidationAgent.
-
     Populates: validation_passed, validation_errors, validation_warnings
     """
     agent = ValidationAgent()

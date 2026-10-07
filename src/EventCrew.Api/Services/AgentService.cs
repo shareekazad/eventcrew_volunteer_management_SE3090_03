@@ -42,15 +42,60 @@ public class AgentService : IAgentService
     }
 
     // ============================================================
-    // PLANNING WORKFLOW (Student 1) — runs the FULL 4-agent pipeline
+    // PLANNING WORKFLOW — runs the FULL 4-agent pipeline
+    // Pre-fetches candidates from the DB and passes them to Python
+    // so the AI service does NOT need to make a circular HTTP call.
     // ============================================================
     public async Task<WorkflowRunStatusDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
     {
-        var requestBody = JsonSerializer.Serialize(
-            new PlanRequestDto { EventId = eventId.ToString() });
+        // ── 1. Pre-fetch candidates from DB ──────────────────────────────
+        var applications = await _db.Applications
+            .Where(a => a.EventId == eventId
+                        && (a.Status == "Submitted" || a.Status == "UnderReview"))
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.User)
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.VolunteerSkills)
+                    .ThenInclude(vs => vs.Skill)
+            .ToListAsync(cancellationToken);
+
+        var candidates = applications.Select(a =>
+        {
+            var profile = a.Volunteer;
+            var user = profile?.User;
+
+            var skills = profile?.VolunteerSkills
+                .Select(vs => vs.Skill?.Name ?? "")
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList() ?? new List<string>();
+
+            var highestProficiency = profile?.VolunteerSkills
+                .Select(vs => vs.ProficiencyLevel)
+                .OrderByDescending(p => p == "Advanced" ? 3 : p == "Intermediate" ? 2 : 1)
+                .FirstOrDefault() ?? "Intermediate";
+
+            return new
+            {
+                volunteer_id = a.VolunteerId.ToString(),
+                volunteer_name = user?.FullName ?? a.VolunteerId.ToString(),
+                rating_score = (double)(profile?.RatingScore ?? 4.0m),
+                skills = skills,
+                experience_level = highestProficiency,
+            };
+        }).ToList();
+
+        _logger.LogInformation(
+            "Pre-fetched {Count} candidates for event {EventId}",
+            candidates.Count, eventId);
+
+        // ── 2. Build the Python payload (includes candidates) ─────────────
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            event_id = eventId.ToString(),
+            candidates = candidates,
+        });
 
         using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
-
         _logger.LogInformation("Calling AI workflow for event {EventId}", eventId);
 
         HttpResponseMessage response;
@@ -157,7 +202,7 @@ public class AgentService : IAgentService
 
         _logger.LogInformation("Workflow run {RunId} approved by user {UserId}", runId, reviewedByUserId);
 
-        // ---- Send approval email to the reviewer/organizer ----
+        // Send approval email
         var organizerEmail = await _db.Users
             .Where(u => u.Id == reviewedByUserId)
             .Select(u => u.Email)
@@ -219,7 +264,6 @@ public class AgentService : IAgentService
             "Proxying volunteer matching request for event {EventId}, role '{Role}'",
             request.EventId, request.RoleName);
 
-        // 1. Fetch applicants from DB and pre-load skills + user names
         var applications = await _db.Applications
             .Where(a => a.EventId == request.EventId)
             .Include(a => a.Volunteer)
@@ -244,23 +288,16 @@ public class AgentService : IAgentService
                 .OrderByDescending(p => p == "Advanced" ? 3 : p == "Intermediate" ? 2 : 1)
                 .FirstOrDefault() ?? "Intermediate";
 
-            var name = user?.FullName ?? a.VolunteerId.ToString();
-
             return new Dictionary<string, object?>
             {
                 ["volunteer_id"] = a.VolunteerId.ToString(),
-                ["volunteer_name"] = name,
+                ["volunteer_name"] = user?.FullName ?? a.VolunteerId.ToString(),
                 ["rating_score"] = (double)(profile?.RatingScore ?? 4.0m),
                 ["skills"] = skills,
                 ["experience_level"] = highestProficiency,
             };
         }).ToList();
 
-        _logger.LogInformation(
-            "Passing {Count} pre-fetched candidates to Python AI for event {EventId}",
-            candidateList.Count, request.EventId.ToString());
-
-        // 2. Build the Python payload
         var pythonPayload = new
         {
             event_id = request.EventId,
@@ -273,7 +310,6 @@ public class AgentService : IAgentService
 
         MatchingResponseDto matchingResult;
 
-        // 3. Try the Python AI microservice
         try
         {
             var body = JsonSerializer.Serialize(pythonPayload, JsonOptions);
@@ -303,7 +339,6 @@ public class AgentService : IAgentService
             matchingResult = BuildFallbackMatchingResponse(request, candidateList);
         }
 
-        // 4. Persist a workflow run record
         var run = new AgentWorkflowRun
         {
             Id = matchingResult.WorkflowId == Guid.Empty ? Guid.NewGuid() : matchingResult.WorkflowId,
@@ -410,7 +445,6 @@ public class AgentService : IAgentService
     // ============================================================
     // PRIVATE HELPERS
     // ============================================================
-
     private async Task<AgentWorkflowRun> PersistWorkflowRunAsync(
         Guid eventId,
         string workflowJson,
@@ -497,7 +531,7 @@ public class AgentService : IAgentService
     };
 
     /// <summary>
-    /// Deterministic fallback scorer (Section 9.1): 60% skills + 30% rating + 10% experience tier.
+    /// Deterministic fallback scorer (Section 9.1): 60% skills + 30% rating + 10% tier.
     /// Used when the Python AI service is unreachable or returns an error.
     /// </summary>
     private static MatchingResponseDto BuildFallbackMatchingResponse(
@@ -533,7 +567,6 @@ public class AgentService : IAgentService
                     ? (double)matchingSkills.Count / requiredSkills.Count
                     : 1.0;
 
-                // Guardrail: 0% skill match cannot be assigned to Advanced role
                 if (minTier == "advanced" && requiredSkills.Count > 0 && matchingSkills.Count == 0)
                     continue;
 

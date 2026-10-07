@@ -6,9 +6,6 @@ Flows through all 4 agent nodes:
 
 Each node reads what it needs and writes only its own section.
 Every node appends to `agent_traces` for the audit trail.
-
-This extends (and supersedes) the earlier PlanningState from Student 1's
-single-agent workflow.
 """
 
 from pydantic import BaseModel, Field
@@ -20,19 +17,17 @@ from app.tools.scheduling_tools import StaffingRatioResult
 from app.schemas.matching_schema import CandidateMatch
 
 
-# ---------------------------------------------------------------------------
-# Shared state schema
-# ---------------------------------------------------------------------------
 class WorkflowState(BaseModel):
     """
     State shared across all 4 agents.
-
-    Fields marked `| None` start empty and are populated by their owning agent.
     """
 
     # ---- Input ----
     event_id: str
     organizer_id: str | None = None
+    # Pre-fetched candidates passed from ASP.NET Core to avoid the
+    # circular HTTP call (Python → ASP.NET → 401 Unauthorized loop).
+    candidates: list[dict] = Field(default_factory=list)
 
     # ---- Global orchestration ----
     workflow_id: str | None = None
@@ -46,9 +41,7 @@ class WorkflowState(BaseModel):
     plan_reasoning: str | None = None
 
     # ---- Node 2: MatchingAgent output ----
-    # One MatchResponse per role requirement
     matching_results: list[dict] = Field(default_factory=list)
-    # Total matched candidates across all roles
     total_matched: int = 0
     total_headcount_needed: int = 0
 
@@ -61,9 +54,9 @@ class WorkflowState(BaseModel):
     validation_errors: list[str] = Field(default_factory=list)
     validation_warnings: list[str] = Field(default_factory=list)
 
-    # ---- Cross-cutting: audit trail (every node appends) ----
+    # ---- Cross-cutting: audit trail ----
     agent_traces: list[dict] = Field(default_factory=list)
 
     # ---- Lifecycle ----
-    status: str = "running"          # running | completed | failed
+    status: str = "running"
     error: str | None = None

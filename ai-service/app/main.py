@@ -49,6 +49,11 @@ class ServiceInfoResponse(BaseModel):
 
 class PlanRequest(BaseModel):
     event_id: str = Field(..., description="UUID of the event to plan staffing for.")
+    # Pre-fetched candidates from ASP.NET Core (avoids circular HTTP 401)
+    candidates: list[dict] = Field(
+        default_factory=list,
+        description="Pre-fetched volunteer applications passed from ASP.NET Core."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -76,9 +81,6 @@ def root() -> ServiceInfoResponse:
 async def plan_staffing(request: PlanRequest) -> PlanResult:
     """
     [LEGACY] Run only the PlanningAgent.
-
-    Kept for backward compatibility. New clients should call /workflow/plan
-    which runs the full 4-agent pipeline.
     """
     logger.info("[legacy] Received single-agent plan request for event_id=%s", request.event_id)
 
@@ -104,17 +106,16 @@ async def workflow_plan(request: PlanRequest) -> dict:
 
         PlanningAgent → MatchingAgent → SchedulingAgent → ValidationAgent
 
-    Returns the complete WorkflowState as JSON, including:
-    - event, venue, staffing_ratio (from Planning)
-    - matching_results (from Matching)
-    - proposed_shifts, shift_conflicts (from Scheduling)
-    - validation_passed, validation_errors, validation_warnings (from Validation)
-    - agent_traces (audit trail of every tool call)
+    Accepts pre-fetched candidates from ASP.NET Core so the Python service
+    does not need to make a circular HTTP call (which would return 401).
     """
-    logger.info("Received workflow request for event_id=%s", request.event_id)
+    logger.info(
+        "Received workflow request for event_id=%s (%d candidates supplied)",
+        request.event_id, len(request.candidates)
+    )
 
     try:
-        result = await run_workflow(request.event_id)
+        result = await run_workflow(request.event_id, candidates=request.candidates)
     except ValueError as e:
         logger.warning("Workflow failed (validation) for event_id=%s: %s", request.event_id, e)
         raise HTTPException(status_code=400, detail=str(e))
