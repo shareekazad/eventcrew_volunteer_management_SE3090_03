@@ -1,22 +1,14 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Layers, Radio, Shield, Menu, X } from 'lucide-react';
-import { getDevOrganizerToken } from '../services/api';
-import { useApplicationStore } from '../stores/applicationStore';
+import { Layers, Radio, Menu, X } from 'lucide-react';
+import { useAuthStore } from '../stores/authStore';
 
+/** @deprecated — Navbar is unused; Sidebar is the primary nav. Kept for reference. */
 export const Navbar: React.FC = () => {
-  const [tokenCopied, setTokenCopied] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const fetchApplicants = useApplicationStore((state) => state.fetchApplicants);
-
-  const copyToken = () => {
-    const token = getDevOrganizerToken();
-    localStorage.setItem('token', token);
-    navigator.clipboard.writeText(token);
-    setTokenCopied(true);
-    setTimeout(() => setTokenCopied(false), 2000);
-    fetchApplicants();
-  };
+  const user = useAuthStore((s) => s.user);
+  const displayName = user?.fullName ?? 'Organizer';
+  const initials = displayName.trim().split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
@@ -74,24 +66,15 @@ export const Navbar: React.FC = () => {
             <span className="font-mono text-slate-800 font-semibold">localhost:5100</span>
           </div>
 
-          <button
-            onClick={copyToken}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition-colors"
-            title="Copy active Organizer Bearer JWT token"
-          >
-            <Shield className="w-3.5 h-3.5 text-brand-600" />
-            <span>{tokenCopied ? '✓ JWT Copied!' : 'Copy JWT'}</span>
-          </button>
-
           <div className="flex items-center space-x-2.5 pl-2 border-l border-slate-200">
             <div className="w-8 h-8 rounded-full bg-brand-600 text-white font-bold text-xs flex items-center justify-center">
-              LO
+              {initials}
             </div>
             <div className="text-left">
-              <div className="text-xs font-bold text-slate-800">Lead Organizer</div>
+              <div className="text-xs font-bold text-slate-800">{displayName}</div>
               <div className="text-[10px] text-emerald-600 font-semibold flex items-center">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 inline-block" />
-                Organizer Role
+                {user?.role ?? 'Organizer'}
               </div>
             </div>
           </div>

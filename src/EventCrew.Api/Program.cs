@@ -43,12 +43,25 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+// ── CORS ─────────────────────────────────────────────────────────────────────
+// Permissive default policy for local development — allows any origin/header/method
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // ── Application Services ─────────────────────────────────────────────────────
 // Student 1: Events and Venues
 builder.Services.AddScoped<IVenueService, VenueService>();
 builder.Services.AddScoped<IEventService, EventService>();
 
-// Student 2: Volunteer Profiles and Applications
+// Student 2: Authentication, Volunteer Profiles and Applications
+builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IVolunteerService, VolunteerService>();
 
 // AI service (Python) — typed HttpClient
@@ -102,7 +115,15 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// CORS must come before Authentication & Authorization
+app.UseCors();
+
+// Skip HTTPS redirect in dev to avoid breaking plain-HTTP Vite proxy calls
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

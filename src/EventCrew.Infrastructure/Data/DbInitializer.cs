@@ -17,8 +17,23 @@ public static class DbInitializer
             // Database might already exist or migrations managed externally
         }
 
+        var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("password123");
+
         if (await context.Users.AnyAsync())
         {
+            // If already seeded with legacy dummy hashes, upgrade them to BCrypt
+            var legacyUsers = await context.Users
+                .Where(u => u.PasswordHash == "hashed_default_password_dev_123" || u.PasswordHash == "hashed_pw_123")
+                .ToListAsync();
+
+            if (legacyUsers.Any())
+            {
+                foreach (var u in legacyUsers)
+                {
+                    u.PasswordHash = defaultPasswordHash;
+                }
+                await context.SaveChangesAsync();
+            }
             return; // DB already seeded
         }
 
@@ -29,7 +44,7 @@ public static class DbInitializer
             FullName = "John",
             Email = "john@eventcrew.com",
             Role = "Organizer",
-            PasswordHash = "hashed_default_password_dev_123",
+            PasswordHash = defaultPasswordHash,
             PhoneNumber = "0771234567",
             IsActive = true
         };
@@ -124,7 +139,7 @@ public static class DbInitializer
                 FullName = member.Name,
                 Email = member.Email,
                 Role = "Volunteer",
-                PasswordHash = "hashed_default_password_dev_123",
+                PasswordHash = defaultPasswordHash,
                 PhoneNumber = "0771234567",
                 IsActive = true
             };

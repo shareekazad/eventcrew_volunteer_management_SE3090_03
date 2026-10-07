@@ -29,9 +29,13 @@ public class User
     [Column("role")]
     public string Role { get; set; } = "Volunteer";
 
+    /// <summary>
+    /// BCrypt salted hash of the user's password. Plain text passwords must never be stored.
+    /// </summary>
     [Required]
+    [MaxLength(255)]
     [Column("password_hash")]
-    public string PasswordHash { get; set; } = "hashed_default_password_dev_123";
+    public string PasswordHash { get; set; } = string.Empty;
 
     [Column("phone_number")]
     [MaxLength(20)]

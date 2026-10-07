@@ -1,24 +1,9 @@
 import axios from 'axios';
 
-// Valid pre-signed JWT token matching backend secret (DevFallbackSecretKeyForLocalTestingOnly12345!),
-// issuer (EventCrew), audience (EventCrewUsers), role (Organizer), and email (organizer@eventcrew.com)
-export const DEMO_ORGANIZER_TOKEN =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJuYW1lIjoiTGVhZCBPcmdhbml6ZXIiLCJlbWFpbCI6Im9yZ2FuaXplckBldmVudGNyZXcuY29tIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiT3JnYW5pemVyIiwicm9sZSI6Ik9yZ2FuaXplciIsImlzcyI6IkV2ZW50Q3JldyIsImF1ZCI6IkV2ZW50Q3Jld1VzZXJzIiwiZXhwIjoyMTA2MTM5ODkwfQ.ApOM7FEdyaxxhxPEhl5LeGKN6OXJdLRqhT2vAMoNIGo';
-
-export const DEV_JWT_SECRET = 'DevFallbackSecretKeyForLocalTestingOnly12345!';
-
 /**
- * Helper to generate or provide a valid development Organizer JWT token.
- * Token contains role "Organizer" and email "organizer@eventcrew.com", signed with dev key.
+ * Axios client pointed at the backend API.
+ * The base URL relies on the Vite proxy for /api → http://localhost:5100.
  */
-export const getDevOrganizerToken = (): string => {
-  return DEMO_ORGANIZER_TOKEN;
-};
-
-export const generateDevOrganizerToken = (_email = 'organizer@eventcrew.com', _role = 'Organizer'): string => {
-  return DEMO_ORGANIZER_TOKEN;
-};
-
 export const apiClient = axios.create({
   baseURL: '/api',
   headers: {
@@ -27,10 +12,13 @@ export const apiClient = axios.create({
   timeout: 10000,
 });
 
-// Request interceptor: attach JWT bearer token from localStorage or fallback demo token
+/**
+ * Request interceptor: attach JWT bearer token from localStorage.
+ * Token is stored under 'token' key by authStore after a successful login.
+ */
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token') || localStorage.getItem('jwt_token') || getDevOrganizerToken();
+    const token = localStorage.getItem('token') ?? localStorage.getItem('jwt_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -43,14 +31,26 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message =
+    const customMessage =
       error.response?.data?.message ||
       error.response?.data?.title ||
       (error.response?.status === 404 ? 'Resource not found' : '') ||
-      (error.response?.status === 401 ? 'Unauthorized: Please check credentials' : '') ||
-      (error.response?.status === 403 ? 'Forbidden: Organizer permission required' : '') ||
-      error.message ||
-      'An unexpected error occurred';
-    return Promise.reject(new Error(message));
+      (error.response?.status === 401 ? 'Invalid email or password.' : '') ||
+      (error.response?.status === 403 ? 'Forbidden: Organizer permission required' : '');
+
+    if (customMessage) {
+      error.message = customMessage;
+    }
+    return Promise.reject(error);
   }
 );
+
+// ── Legacy exports kept for backward compatibility ───────────────────────────
+/** @deprecated Use authStore.login() instead */
+export const getDevOrganizerToken = (): string => localStorage.getItem('token') ?? '';
+/** @deprecated */
+export const generateDevOrganizerToken = (): string => localStorage.getItem('token') ?? '';
+/** @deprecated */
+export const DEMO_ORGANIZER_TOKEN = '';
+/** @deprecated */
+export const DEV_JWT_SECRET = 'DevFallbackSecretKeyForLocalTestingOnly12345!';
