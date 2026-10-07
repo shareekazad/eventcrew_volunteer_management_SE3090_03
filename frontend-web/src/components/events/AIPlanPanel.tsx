@@ -10,11 +10,12 @@ import {
   Wrench,
   User,
   Calendar,
-  MapPin,
   Users,
   ShieldCheck,
   ShieldAlert,
   AlertTriangle,
+  Info,
+  Code2,
 } from 'lucide-react';
 import type {
   WorkflowRunDetailDto,
@@ -40,9 +41,23 @@ export const AIPlanPanel: React.FC<Props> = ({
 }) => {
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [showDevDetails, setShowDevDetails] = useState(false);
 
   const workflow = parseWorkflowSummary(run.planSummary);
   const isPending = run.status === 'AwaitingApproval';
+
+  // Compute overall health for hero banner
+  const errorCount = workflow?.validation_errors?.length ?? 0;
+  const warningCount = workflow?.validation_warnings?.length ?? 0;
+  const health: 'success' | 'warning' | 'failure' = !workflow
+    ? 'warning'
+    : run.status === 'Failed'
+      ? 'failure'
+      : errorCount > 0
+        ? 'failure'
+        : warningCount > 0
+          ? 'warning'
+          : 'success';
 
   const handleReject = async () => {
     if (rejectReason.trim().length === 0) return;
@@ -74,6 +89,14 @@ export const AIPlanPanel: React.FC<Props> = ({
       <div className="p-5 space-y-4">
         {workflow ? (
           <>
+            {/* ⭐ NEW: Hero Summary */}
+            <HeroSummary
+              workflow={workflow}
+              health={health}
+              errorCount={errorCount}
+              warningCount={warningCount}
+            />
+
             {/* Node 1: Planning */}
             <PlanningSection workflow={workflow} />
 
@@ -88,6 +111,14 @@ export const AIPlanPanel: React.FC<Props> = ({
 
             {/* Audit trail */}
             <TracesSection workflow={workflow} />
+
+            {/* ⭐ NEW: Developer Details (collapsed by default) */}
+            <DeveloperDetails
+              run={run}
+              workflow={workflow}
+              open={showDevDetails}
+              onToggle={() => setShowDevDetails((v) => !v)}
+            />
           </>
         ) : (
           <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
@@ -187,6 +218,126 @@ export const AIPlanPanel: React.FC<Props> = ({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// NEW: Hero Summary
+// ============================================================
+const HeroSummary: React.FC<{
+  workflow: WorkflowStateDto;
+  health: 'success' | 'warning' | 'failure';
+  errorCount: number;
+  warningCount: number;
+}> = ({ workflow, health, errorCount, warningCount }) => {
+  const tone = {
+    success: {
+      bg: 'bg-emerald-50 border-emerald-200',
+      icon: <CheckCircle2 className="w-5 h-5 text-emerald-600" />,
+      title: 'Plan generated successfully',
+      titleColor: 'text-emerald-800',
+    },
+    warning: {
+      bg: 'bg-amber-50 border-amber-200',
+      icon: <AlertTriangle className="w-5 h-5 text-amber-600" />,
+      title: 'Needs attention',
+      titleColor: 'text-amber-800',
+    },
+    failure: {
+      bg: 'bg-red-50 border-red-200',
+      icon: <XCircle className="w-5 h-5 text-red-600" />,
+      title: 'Plan has unresolved issues',
+      titleColor: 'text-red-800',
+    },
+  }[health];
+
+  const eventTitle = workflow.event?.title ?? 'This event';
+  const venueName = workflow.venue?.name;
+  const venueCapacity = workflow.venue?.capacity;
+  const matched = workflow.total_matched ?? 0;
+  const needed = workflow.total_headcount_needed ?? 0;
+
+  // Build a plain-English sentence
+  const sentences: string[] = [];
+
+  if (venueName && venueCapacity) {
+    sentences.push(`${eventTitle} at ${venueName} (capacity ${venueCapacity}).`);
+  } else if (venueName) {
+    sentences.push(`${eventTitle} at ${venueName}.`);
+  } else {
+    sentences.push(`${eventTitle}.`);
+  }
+
+  if (workflow.staffing_ratio) {
+    sentences.push(
+      `Recommended staffing: ${workflow.staffing_ratio.recommended_ushers} ushers + ${workflow.staffing_ratio.recommended_registration_staff} registration (${workflow.staffing_ratio.total_staff} total).`,
+    );
+  }
+
+  if (needed > 0) {
+    const tail: string[] = [];
+    if (errorCount > 0) tail.push(`${errorCount} blocking issue${errorCount === 1 ? '' : 's'}`);
+    if (warningCount > 0) tail.push(`${warningCount} warning${warningCount === 1 ? '' : 's'}`);
+
+    if (tail.length === 0) {
+      sentences.push(`All ${matched} of ${needed} volunteer slots matched and validated.`);
+    } else {
+      sentences.push(
+        `Matched ${matched} of ${needed} volunteer slots. ${tail.join(' and ')} need${tail.length === 1 && errorCount + warningCount === 1 ? 's' : ''} your attention before approval.`,
+      );
+    }
+  }
+
+  return (
+    <div className={`rounded-xl border ${tone.bg} p-4`}>
+      <div className="flex items-start">
+        <div className="mr-3 mt-0.5">{tone.icon}</div>
+        <div className="flex-1">
+          <div className={`font-bold ${tone.titleColor} mb-1`}>{tone.title}</div>
+          <p className="text-sm text-slate-700 leading-relaxed">{sentences.join(' ')}</p>
+
+          {/* Snapshot bullets */}
+          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600">
+            {workflow.event && (
+              <div>
+                <span className="text-slate-400">Event:</span>{' '}
+                <span className="font-medium">{workflow.event.title}</span>
+              </div>
+            )}
+            {workflow.venue && (
+              <div>
+                <span className="text-slate-400">Venue:</span>{' '}
+                <span className="font-medium">
+                  {workflow.venue.name}
+                  {workflow.venue.capacity ? ` · ${workflow.venue.capacity} cap` : ''}
+                </span>
+              </div>
+            )}
+            {needed > 0 && (
+              <div>
+                <span className="text-slate-400">Matched:</span>{' '}
+                <span className="font-medium">
+                  {matched} of {needed}
+                </span>
+              </div>
+            )}
+            {(workflow.proposed_shifts?.length ?? 0) > 0 && (
+              <div>
+                <span className="text-slate-400">Shifts proposed:</span>{' '}
+                <span className="font-medium">{workflow.proposed_shifts.length}</span>
+              </div>
+            )}
+            <div>
+              <span className="text-slate-400">Issues:</span>{' '}
+              <span className="font-medium">
+                {errorCount} error{errorCount === 1 ? '' : 's'}, {warningCount} warning
+                {warningCount === 1 ? '' : 's'}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -305,7 +456,7 @@ const MatchingSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow })
               <div key={i} className="rounded-lg bg-white p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-slate-700">{mr.role_name}</span>
-                  <span className={statusTagColor(mr.status)}>{mr.status}</span>
+                  <span className={statusTagColor(mr.status)}>{humanStatus(mr.status)}</span>
                 </div>
                 {mr.error && (
                   <div className="text-xs text-red-600">Error: {mr.error}</div>
@@ -395,7 +546,8 @@ const SchedulingSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow 
               {conflicts.map((c, i) => (
                 <div key={i} className={`text-xs rounded px-2 py-1.5 ${severityColor(c.severity)}`}>
                   <AlertTriangle className="w-3 h-3 inline mr-1" />
-                  [{c.severity}] {c.message}
+                  <span className="font-semibold">{humanSeverity(c.severity)}:</span>{' '}
+                  {c.message}
                 </div>
               ))}
             </div>
@@ -411,6 +563,7 @@ const SchedulingSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow 
 // ============================================================
 const ValidationSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) => {
   const [open, setOpen] = useState(true);
+  const [showRaw, setShowRaw] = useState(false);
   const passed = workflow.validation_passed;
   const errors = workflow.validation_errors ?? [];
   const warnings = workflow.validation_warnings ?? [];
@@ -438,27 +591,61 @@ const ValidationSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow 
       {open && (
         <div className="px-4 pb-4 space-y-2">
           {errors.length > 0 && (
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {errors.map((e, i) => (
-                <div key={i} className="text-xs text-red-700 flex items-start">
-                  <XCircle className="w-3 h-3 mr-1.5 mt-0.5 flex-shrink-0" />
-                  {e}
+                <div key={i} className="text-xs text-red-700 flex items-start bg-white/60 rounded px-2 py-1.5">
+                  <XCircle className="w-3.5 h-3.5 mr-1.5 mt-0.5 flex-shrink-0" />
+                  <span>{humanizeMessage(e)}</span>
                 </div>
               ))}
             </div>
           )}
           {warnings.length > 0 && (
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {warnings.map((w, i) => (
-                <div key={i} className="text-xs text-amber-700 flex items-start">
-                  <AlertTriangle className="w-3 h-3 mr-1.5 mt-0.5 flex-shrink-0" />
-                  {w}
+                <div key={i} className="text-xs text-amber-700 flex items-start bg-white/60 rounded px-2 py-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1.5 mt-0.5 flex-shrink-0" />
+                  <span>{humanizeMessage(w)}</span>
                 </div>
               ))}
             </div>
           )}
           {passed && errors.length === 0 && warnings.length === 0 && (
             <p className="text-xs text-emerald-700">All validation rules passed.</p>
+          )}
+
+          {/* ⭐ NEW: Raw validator output toggle (nothing deleted) */}
+          {(errors.length > 0 || warnings.length > 0) && (
+            <div className="pt-1">
+              <button
+                onClick={() => setShowRaw((v) => !v)}
+                className="text-[11px] text-slate-500 hover:text-slate-700 flex items-center"
+              >
+                {showRaw ? <ChevronDown className="w-3 h-3 mr-1" /> : <ChevronRight className="w-3 h-3 mr-1" />}
+                <Code2 className="w-3 h-3 mr-1" />
+                {showRaw ? 'Hide raw validator output' : 'Show raw validator output'}
+              </button>
+              {showRaw && (
+                <div className="mt-2 rounded-lg bg-slate-900 text-slate-100 text-[11px] font-mono p-3 space-y-1 overflow-x-auto">
+                  {errors.length > 0 && (
+                    <div>
+                      <div className="text-red-300 font-bold mb-1">// Errors ({errors.length})</div>
+                      {errors.map((e, i) => (
+                        <div key={i} className="whitespace-pre-wrap break-all">{e}</div>
+                      ))}
+                    </div>
+                  )}
+                  {warnings.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-amber-300 font-bold mb-1">// Warnings ({warnings.length})</div>
+                      {warnings.map((w, i) => (
+                        <div key={i} className="whitespace-pre-wrap break-all">{w}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -472,6 +659,7 @@ const ValidationSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow 
 const TracesSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) => {
   const [open, setOpen] = useState(false);
   const traces = workflow.agent_traces ?? [];
+  const totalMs = traces.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
@@ -484,7 +672,9 @@ const TracesSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) =
           <Clock className="w-4 h-4 text-slate-600 mr-2" />
           <span className="font-bold text-slate-800">Audit Trail</span>
         </div>
-        <span className="text-xs text-slate-500">{traces.length} entries</span>
+        <span className="text-xs text-slate-500">
+          {traces.length} entries • {totalMs}ms total
+        </span>
       </button>
 
       {open && (
@@ -508,6 +698,87 @@ const TracesSection: React.FC<{ workflow: WorkflowStateDto }> = ({ workflow }) =
     </div>
   );
 };
+
+// ============================================================
+// NEW: Developer Details (collapsed by default — NOTHING deleted)
+// ============================================================
+const DeveloperDetails: React.FC<{
+  run: WorkflowRunDetailDto;
+  workflow: WorkflowStateDto;
+  open: boolean;
+  onToggle: () => void;
+}> = ({ run, workflow, open, onToggle }) => {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/60">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3"
+      >
+        <div className="flex items-center">
+          {open ? <ChevronDown className="w-4 h-4 mr-2" /> : <ChevronRight className="w-4 h-4 mr-2" />}
+          <Code2 className="w-4 h-4 text-slate-600 mr-2" />
+          <span className="font-bold text-slate-700 text-sm">Developer Details</span>
+          <span className="ml-2 text-[11px] text-slate-400">
+            (full IDs, raw state — for audit)
+          </span>
+        </div>
+        <span className="text-xs text-slate-500">{open ? 'Hide' : 'Show'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <DevField label="Run ID" value={run.runId} mono />
+            <DevField label="Status" value={run.status} />
+            {workflow.event && <DevField label="Event ID" value={String(workflow.event.id)} mono />}
+            {workflow.venue && <DevField label="Venue ID" value={String(workflow.venue.id)} mono />}
+            {run.reviewedByUserId && (
+              <DevField label="Reviewed by (user ID)" value={run.reviewedByUserId} mono />
+            )}
+            {run.reviewedAt && <DevField label="Reviewed at" value={run.reviewedAt} />}
+          </div>
+
+          {workflow.proposed_shifts && workflow.proposed_shifts.length > 0 && (
+            <div>
+              <div className="font-bold text-slate-600 mb-1">Shift IDs</div>
+              <div className="space-y-0.5">
+                {workflow.proposed_shifts.map((s) => (
+                  <div key={s.shift_id} className="font-mono text-slate-600 break-all">
+                    {s.shift_id} <span className="text-slate-400">— {s.role_name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="font-bold text-slate-600 mb-1">Raw workflow state (JSON)</div>
+            <pre className="rounded-lg bg-slate-900 text-slate-100 p-3 overflow-x-auto text-[11px] leading-relaxed max-h-96 overflow-y-auto">
+              {JSON.stringify(workflow, null, 2)}
+            </pre>
+          </div>
+
+          <div className="text-[11px] text-slate-500 italic">
+            <Info className="w-3 h-3 inline mr-1" />
+            All data shown above is also displayed in the human-readable sections
+            higher up — this is the raw audit form for reviewers.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DevField: React.FC<{ label: string; value: string; mono?: boolean }> = ({
+  label,
+  value,
+  mono,
+}) => (
+  <div>
+    <span className="text-slate-400">{label}: </span>
+    <span className={mono ? 'font-mono text-slate-700 break-all' : 'text-slate-700'}>{value}</span>
+  </div>
+);
 
 // ============================================================
 // Status badge
@@ -540,7 +811,6 @@ function parseWorkflowSummary(json: string | null): WorkflowStateDto | null {
   if (!json) return null;
   try {
     const parsed = JSON.parse(json);
-    // Check it's the new shape (has agent_traces array)
     if (Array.isArray(parsed?.agent_traces)) {
       return parsed as WorkflowStateDto;
     }
@@ -573,6 +843,33 @@ function statusTagColor(status: string): string {
   }
 }
 
+// ⭐ NEW: human-friendly labels
+function humanStatus(status: string): string {
+  switch (status) {
+    case 'SUCCESS':
+      return 'Matched';
+    case 'PARTIAL_MATCH':
+      return 'Partial';
+    case 'SAFE_FAILURE':
+      return 'Failed safely';
+    default:
+      return status;
+  }
+}
+
+function humanSeverity(sev: string): string {
+  switch (sev) {
+    case 'high':
+      return 'Critical';
+    case 'medium':
+      return 'Warning';
+    case 'low':
+      return 'Info';
+    default:
+      return sev;
+  }
+}
+
 function severityColor(sev: string): string {
   switch (sev) {
     case 'high':
@@ -582,4 +879,31 @@ function severityColor(sev: string): string {
     default:
       return 'bg-slate-50 text-slate-600 border border-slate-200';
   }
+}
+
+/**
+ * Convert raw backend error strings into friendlier sentences.
+ * Keeps the original text visible if the pattern isn't matched.
+ * We do NOT delete anything — just prefix nicer phrasing where possible.
+ */
+function humanizeMessage(raw: string): string {
+  // e.g. "Double-booking: Sarah Jenkins is assigned to overlapping shifts."
+  if (/^double-booking:/i.test(raw)) {
+    const rest = raw.replace(/^double-booking:\s*/i, '');
+    return `Double-booking — ${rest}`;
+  }
+  if (/^understaffed:/i.test(raw)) {
+    const rest = raw.replace(/^understaffed:\s*/i, '');
+    return `Understaffed — ${rest}`;
+  }
+  if (/^candidate\s+/i.test(raw)) {
+    return raw; // already readable
+  }
+  // Shift 838a5fc2 for 'Registration Desk' has 0/2 slots filled.
+  const shiftMatch = raw.match(/^Shift\s+([0-9a-f-]+)\s+for\s+'([^']+)'\s+has\s+(.+)$/i);
+  if (shiftMatch) {
+    const [, shortId, role, rest] = shiftMatch;
+    return `'${role}' shift (${shortId.slice(0, 8)}…) — ${rest}`;
+  }
+  return raw;
 }
