@@ -81,8 +81,8 @@ public class VolunteerService : IVolunteerService
                 .Distinct()
                 .Select(sid => new VolunteerSkill
                 {
-                    VolunteerId     = profile.Id,
-                    SkillId         = sid,
+                    VolunteerId      = profile.Id,
+                    SkillId          = sid,
                     ProficiencyLevel = "Intermediate",
                 })
                 .ToList();
@@ -177,6 +177,24 @@ public class VolunteerService : IVolunteerService
         return applications.Select(MapApplicationToDto);
     }
 
+    // ── My Applications (volunteer self-service) ────────────────────────────
+
+    public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsByVolunteerIdAsync(Guid volunteerId)
+    {
+        var applications = await _db.Applications
+            .AsNoTracking()
+            .Where(a => a.VolunteerId == volunteerId)
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.User)
+            .Include(a => a.Volunteer)
+                .ThenInclude(v => v.VolunteerSkills)
+                    .ThenInclude(vs => vs.Skill)
+            .OrderByDescending(a => a.AppliedAt)
+            .ToListAsync();
+
+        return applications.Select(MapApplicationToDto);
+    }
+
     // ── Status Update ───────────────────────────────────────────────────────
 
     public async Task<ApplicationResponseDto> UpdateApplicationStatusAsync(
@@ -196,8 +214,8 @@ public class VolunteerService : IVolunteerService
                 $"[{string.Join(", ", AllowedTransitions.GetValueOrDefault(application.Status, new HashSet<string>()))}].");
         }
 
-        application.Status    = dto.Status;
-        application.Notes     = dto.ReviewNotes ?? application.Notes;
+        application.Status     = dto.Status;
+        application.Notes      = dto.ReviewNotes ?? application.Notes;
         application.ReviewedAt = DateTime.UtcNow;
         application.UpdatedAt  = DateTime.UtcNow;
 

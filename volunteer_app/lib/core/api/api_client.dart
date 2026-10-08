@@ -32,12 +32,20 @@ class ApiClient {
   final http.Client _client;
   final TokenStorage _tokenStorage;
 
-  /// GET request. Returns a decoded JSON map or list.
+  // ---------------------------------------------------------------------
+  // GET
+  // ---------------------------------------------------------------------
   Future<dynamic> get(String path) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
 
     try {
       final headers = await _buildHeaders();
+
+      // ignore: avoid_print
+      print('=== GET $path ===');
+      // ignore: avoid_print
+      print('Headers: $headers');
+
       final response = await _client
           .get(uri, headers: headers)
           .timeout(ApiConfig.requestTimeout);
@@ -50,12 +58,22 @@ class ApiClient {
     }
   }
 
-  /// POST request with an optional JSON body.
+  // ---------------------------------------------------------------------
+  // POST
+  // ---------------------------------------------------------------------
   Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
 
     try {
       final headers = await _buildHeaders();
+
+      // ignore: avoid_print
+      print('=== POST $path ===');
+      // ignore: avoid_print
+      print('Headers: $headers');
+      // ignore: avoid_print
+      print('Body: $body');
+
       final response = await _client
           .post(
             uri,
@@ -72,7 +90,9 @@ class ApiClient {
     }
   }
 
-  /// Builds request headers, adding the bearer token if one is stored.
+  // ---------------------------------------------------------------------
+  // Headers (with token)
+  // ---------------------------------------------------------------------
   Future<Map<String, String>> _buildHeaders() async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -80,6 +100,13 @@ class ApiClient {
     };
 
     final token = await _tokenStorage.readToken();
+
+    // ignore: avoid_print
+    print(
+      '=== _buildHeaders === token is '
+      '${token == null ? "NULL" : "len:${token.length}"}',
+    );
+
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
@@ -87,7 +114,9 @@ class ApiClient {
     return headers;
   }
 
-  /// Validates the response and returns decoded JSON.
+  // ---------------------------------------------------------------------
+  // Response handling
+  // ---------------------------------------------------------------------
   dynamic _handleResponse(http.Response response) {
     final body = response.body;
 

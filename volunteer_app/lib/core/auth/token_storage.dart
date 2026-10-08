@@ -8,9 +8,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// (EncryptedSharedPreferences on Android, Keychain on iOS).
 ///
 /// On web, secure storage requires special headers that Flutter's dev server
-/// doesn't set. We fall back to in-memory storage for web so the demo works.
-/// Production web deployments should be served with the required COOP/COEP
-/// headers to enable the real secure storage.
+/// doesn't set. We fall back to a **static in-memory cache** so the token
+/// survives across different `TokenStorage()` instances within the same
+/// page session (until a hard refresh or hot restart).
 class TokenStorage {
   static const _tokenKey = 'auth_token';
   static const _userIdKey = 'auth_user_id';
@@ -19,14 +19,16 @@ class TokenStorage {
   static const _roleKey = 'auth_role';
   static const _expiresAtKey = 'auth_expires_at';
 
+  /// Static so all TokenStorage instances share the same cache.
+  static final Map<String, String> _webCache = {};
+
   final FlutterSecureStorage _storage;
-  final Map<String, String> _webCache = {};
 
   TokenStorage({FlutterSecureStorage? storage})
       : _storage = storage ?? const FlutterSecureStorage();
 
   // ---------------------------------------------------------------------
-  // Low-level read/write helpers that switch based on platform
+  // Low-level helpers that switch based on platform
   // ---------------------------------------------------------------------
   Future<void> _write(String key, String value) async {
     if (kIsWeb) {
@@ -52,7 +54,7 @@ class TokenStorage {
   }
 
   // ---------------------------------------------------------------------
-  // Save everything in one call after a successful login/register
+  // Save / read / clear
   // ---------------------------------------------------------------------
   Future<void> saveSession({
     required String token,
@@ -72,9 +74,6 @@ class TokenStorage {
     ]);
   }
 
-  // ---------------------------------------------------------------------
-  // Read
-  // ---------------------------------------------------------------------
   Future<String?> readToken() => _read(_tokenKey);
   Future<String?> readUserId() => _read(_userIdKey);
   Future<String?> readEmail() => _read(_emailKey);
@@ -87,7 +86,6 @@ class TokenStorage {
     return DateTime.tryParse(raw);
   }
 
-  /// True only if a token exists AND it hasn't expired yet.
   Future<bool> hasValidSession() async {
     final token = await readToken();
     if (token == null || token.isEmpty) return false;
@@ -98,9 +96,6 @@ class TokenStorage {
     return expiresAt.isAfter(DateTime.now());
   }
 
-  // ---------------------------------------------------------------------
-  // Clear (logout)
-  // ---------------------------------------------------------------------
   Future<void> clear() async {
     await Future.wait([
       _delete(_tokenKey),

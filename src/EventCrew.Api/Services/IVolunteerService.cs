@@ -46,4 +46,10 @@ public interface IVolunteerService
     /// Throws <see cref="InvalidOperationException"/> on an illegal transition.
     /// </summary>
     Task<ApplicationResponseDto> UpdateApplicationStatusAsync(Guid applicationId, UpdateApplicationStatusDto dto);
+
+    /// <summary>
+    /// Returns all applications submitted by a given volunteer,
+    /// ordered by most recent first (by AppliedAt).
+    /// </summary>
+    Task<IEnumerable<ApplicationResponseDto>> GetApplicationsByVolunteerIdAsync(Guid volunteerId);
 }

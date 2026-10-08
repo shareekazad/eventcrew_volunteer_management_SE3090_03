@@ -114,6 +114,25 @@ public class ApplicationsController : ControllerBase
         }
     }
 
+        // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/applications/mine
+    // Volunteer retrieves their own applications with status.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Get all applications submitted by the current volunteer.</summary>
+    /// <response code="200">List of the volunteer's applications.</response>
+    /// <response code="401">Unauthenticated.</response>
+    /// <response code="403">User is not a Volunteer.</response>
+    [HttpGet("mine")]
+    [Authorize(Roles = "Volunteer")]
+    [ProducesResponseType(typeof(IEnumerable<ApplicationResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyApplications()
+    {
+        var volunteerId = GetCurrentVolunteerId();
+        var results = await _volunteerService.GetApplicationsByVolunteerIdAsync(volunteerId);
+        return Ok(results);
+    }
+
     // ── Private Helpers ──────────────────────────────────────────────────────
 
     /// <summary>

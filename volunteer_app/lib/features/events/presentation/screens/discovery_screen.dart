@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../../../core/auth/auth_provider.dart';
+import '../../../applications/presentation/screens/my_applications_screen.dart';
+import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../data/models/event_model.dart';
 import '../../data/repositories/event_repository.dart';
 import '../widgets/event_card.dart';
@@ -10,6 +14,11 @@ import '../../../attendance/presentation/screens/attendance_screen.dart';
 ///
 /// Loads events from GET /api/Events and displays them as cards.
 /// Tapping a card navigates to the event detail screen.
+///
+/// AppBar has a profile menu (top-right) with:
+/// - My Profile      → ProfileScreen
+/// - My Applications → MyApplicationsScreen
+/// - Logout          → AuthProvider.logout()
 class DiscoveryScreen extends StatefulWidget {
   const DiscoveryScreen({super.key});
 
@@ -52,17 +61,101 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text('You will be returned to the login screen.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    await context.read<AuthProvider>().logout();
+    // AuthGate in main.dart watches isLoggedIn and swaps to LoginScreen.
+  }
+
+  void _openMyApplications() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MyApplicationsScreen()),
+    );
+  }
+
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_selectedDestination == 0 ? 'Discover Events' : 'Attendance'),
+        title:
+            Text(_selectedDestination == 0 ? 'Discover Events' : 'Attendance'),
         actions: _selectedDestination == 0
             ? [
                 IconButton(
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Refresh',
                   onPressed: _loadEvents,
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.account_circle_outlined),
+                  tooltip: 'Account',
+                  onSelected: (value) async {
+                    switch (value) {
+                      case 'profile':
+                        _openProfile();
+                        break;
+                      case 'applications':
+                        _openMyApplications();
+                        break;
+                      case 'logout':
+                        await _handleLogout();
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'profile',
+                      child: ListTile(
+                        leading: Icon(Icons.person_outline),
+                        title: Text('My Profile'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'applications',
+                      child: ListTile(
+                        leading: Icon(Icons.description_outlined),
+                        title: Text('My Applications'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'logout',
+                      child: ListTile(
+                        leading: Icon(Icons.logout, color: Colors.red),
+                        title: Text('Logout',
+                            style: TextStyle(color: Colors.red)),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
                 ),
               ]
             : null,
