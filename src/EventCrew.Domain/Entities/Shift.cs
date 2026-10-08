@@ -23,6 +23,9 @@ public class Shift
     [Column("title")]
     public string Title { get; set; } = string.Empty;
 
+    [Column("description")]
+    public string? Description { get; set; }
+
     [Column("start_time")]
     public DateTimeOffset StartTime { get; set; }
 
@@ -31,6 +34,23 @@ public class Shift
 
     [Column("capacity")]
     public int Capacity { get; set; }
+
+    [Column("status")]
+    [MaxLength(20)]
+    public string Status { get; set; } = "Scheduled";
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    // Navigation properties
+    [ForeignKey(nameof(EventId))]
+    public Event Event { get; set; } = null!;
+
+    [ForeignKey(nameof(RoleRequirementId))]
+    public RoleRequirement RoleRequirement { get; set; } = null!;
 
     public ICollection<ShiftAssignment> Assignments { get; set; } = new List<ShiftAssignment>();
     public ICollection<QrCodeToken> QrCodeTokens { get; set; } = new List<QrCodeToken>();

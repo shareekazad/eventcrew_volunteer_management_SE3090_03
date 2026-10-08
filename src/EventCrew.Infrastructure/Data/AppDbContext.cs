@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
     // ---- Student 3: Shifts ----
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
+    public DbSet<ShiftSwapRequest> ShiftSwapRequests => Set<ShiftSwapRequest>();
 
     // ---- Student 4: Attendance & QR ----
     public DbSet<QrCodeToken> QrCodeTokens => Set<QrCodeToken>();
@@ -159,6 +160,66 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
+        // ── Student 3: Shifts ─────────────────────────────────────────────────
+        modelBuilder.Entity<Shift>(e =>
+        {
+            e.ToTable("shifts");
+            e.HasKey(s => s.Id);
+            e.Property(s => s.Id).HasColumnName("id");
+            e.Property(s => s.EventId).HasColumnName("event_id");
+            e.Property(s => s.RoleRequirementId).HasColumnName("role_requirement_id");
+            e.Property(s => s.Title).HasColumnName("title").HasMaxLength(150).IsRequired();
+            e.Property(s => s.Description).HasColumnName("description");
+            e.Property(s => s.StartTime).HasColumnName("start_time");
+            e.Property(s => s.EndTime).HasColumnName("end_time");
+            e.Property(s => s.Capacity).HasColumnName("capacity");
+            e.Property(s => s.Status).HasColumnName("status").HasMaxLength(20).HasDefaultValue("Scheduled");
+            e.Property(s => s.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now() AT TIME ZONE 'utc'");
+            e.Property(s => s.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now() AT TIME ZONE 'utc'");
+
+            e.HasOne(s => s.Event)
+                .WithMany()
+                .HasForeignKey(s => s.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(s => s.RoleRequirement)
+                .WithMany()
+                .HasForeignKey(s => s.RoleRequirementId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(s => s.EventId).HasDatabaseName("idx_shifts_event");
+        });
+
+        // ── Student 3: ShiftSwapRequest ──────────────────────────────────────
+        modelBuilder.Entity<ShiftSwapRequest>(e =>
+        {
+            e.ToTable("shift_swap_requests");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).HasColumnName("id");
+            e.Property(r => r.RequesterAssignmentId).HasColumnName("requester_assignment_id");
+            e.Property(r => r.TargetVolunteerId).HasColumnName("target_volunteer_id");
+            e.Property(r => r.TargetShiftId).HasColumnName("target_shift_id");
+            e.Property(r => r.Reason).HasColumnName("reason");
+            e.Property(r => r.Status).HasColumnName("status").HasMaxLength(25).HasDefaultValue("Pending_Target");
+            e.Property(r => r.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now() AT TIME ZONE 'utc'");
+            e.Property(r => r.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now() AT TIME ZONE 'utc'");
+
+            e.HasOne(r => r.RequesterAssignment)
+                .WithMany()
+                .HasForeignKey(r => r.RequesterAssignmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(r => r.TargetVolunteer)
+                .WithMany()
+                .HasForeignKey(r => r.TargetVolunteerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(r => r.TargetShift)
+                .WithMany()
+                .HasForeignKey(r => r.TargetShiftId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // ── Student 4: Attendance & QR ────────────────────────────────────────
         modelBuilder
             .Entity<AttendanceRecord>()
@@ -182,6 +243,18 @@ public class AppDbContext : DbContext
             .WithMany(s => s.Assignments)
             .HasForeignKey(a => a.ShiftId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasOne(a => a.Volunteer)
+            .WithMany()
+            .HasForeignKey(a => a.VolunteerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ShiftAssignment>()
+            .HasOne(a => a.AssignedByUser)
+            .WithMany()
+            .HasForeignKey(a => a.AssignedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<ShiftAssignment>()
             .HasOne(a => a.AttendanceRecord)
