@@ -9,7 +9,8 @@ import 'register_screen.dart';
 /// Responsibilities:
 /// - Email + password form with validation
 /// - Calls AuthProvider.login()
-/// - Navigates on success, displays error inline on failure
+/// - On success, AuthGate swaps to DiscoveryScreen automatically
+/// - Displays error inline on failure
 /// - Links to register_screen.dart for new users
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,13 +43,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
-    if (success) {
-      // Root widget listens to AuthProvider and will swap to the home screen.
-      // No manual navigation needed.
-    } else {
+    if (!success) {
       // Error is displayed below via context.watch<AuthProvider>().errorMessage
       setState(() {});
     }
+    // On success, AuthGate swaps the tree — no navigation needed here.
   }
 
   @override
@@ -68,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // ---- Header ------------------------------------------------
+                    // ---- Header ----
                     const Icon(Icons.event_available,
                         size: 72, color: Colors.deepPurple),
                     const SizedBox(height: 16),
@@ -89,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 40),
 
-                    // ---- Email ------------------------------------------------
+                    // ---- Email ----
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -111,7 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // ---- Password ---------------------------------------------
+                    // ---- Password ----
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
@@ -142,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // ---- Error message ----------------------------------------
+                    // ---- Error message ----
                     if (auth.errorMessage != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
@@ -169,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
 
-                    // ---- Submit button ----------------------------------------
+                    // ---- Submit button ----
                     SizedBox(
                       height: 52,
                       child: ElevatedButton(
@@ -199,9 +198,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // ---- Register link ----------------------------------------
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    // ---- Register link (Wrap to prevent overflow) ----
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           "Don't have an account? ",

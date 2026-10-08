@@ -7,7 +7,7 @@ import '../../../../core/auth/auth_provider.dart';
 ///
 /// Collects: full name, email, password, confirm password, optional phone.
 /// On success, the AuthProvider flips isLoggedIn to true and the root
-/// widget swaps to the home screen automatically.
+/// widget (AuthGate) swaps to the home screen automatically.
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -52,9 +52,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
 
     if (success) {
-      // Root widget will swap to home automatically.
-      // Pop back so the user doesn't see a stale Register screen if they
-      // later log out — cleaner navigation history.
       Navigator.of(context).maybePop();
     }
   }
@@ -83,7 +80,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   children: [
                     const SizedBox(height: 8),
 
-                    // ---- Full name --------------------------------------------
+                    // ---- Full name ----
                     TextFormField(
                       controller: _fullNameController,
                       textCapitalization: TextCapitalization.words,
@@ -102,7 +99,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // ---- Email ------------------------------------------------
+                    // ---- Email ----
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -123,7 +120,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // ---- Phone (optional) -------------------------------------
+                    // ---- Phone (optional) ----
                     TextFormField(
                       controller: _phoneController,
                       keyboardType: TextInputType.phone,
@@ -137,7 +134,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // ---- Password ---------------------------------------------
+                    // ---- Password ----
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
@@ -166,7 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // ---- Confirm password -------------------------------------
+                    // ---- Confirm password ----
                     TextFormField(
                       controller: _confirmPasswordController,
                       obscureText: _obscureConfirm,
@@ -196,7 +193,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // ---- Error message ----------------------------------------
+                    // ---- Error message ----
                     if (auth.errorMessage != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
@@ -223,7 +220,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
 
-                    // ---- Submit ------------------------------------------------
+                    // ---- Submit ----
                     SizedBox(
                       height: 52,
                       child: ElevatedButton(
@@ -253,9 +250,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // ---- Back to login ----------------------------------------
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    // ---- Back to login (Wrap to prevent overflow) ----
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           'Already have an account? ',
