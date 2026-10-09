@@ -46,4 +46,15 @@ public interface IVolunteerService
     /// Throws <see cref="InvalidOperationException"/> on an illegal transition.
     /// </summary>
     Task<ApplicationResponseDto> UpdateApplicationStatusAsync(Guid applicationId, UpdateApplicationStatusDto dto);
+
+    /// <summary>
+    /// Retrieves all applications submitted by the given volunteer user ID.
+    /// Includes event titles, venue names, and dates.
+    /// </summary>
+    Task<IEnumerable<ApplicationResponseDto>> GetApplicationsByVolunteerUserIdAsync(Guid userId);
+
+    /// <summary>
+    /// Retrieves all available skills in the system for skill builder selection.
+    /// </summary>
+    Task<IEnumerable<SkillDto>> GetAllSkillsAsync();
 }

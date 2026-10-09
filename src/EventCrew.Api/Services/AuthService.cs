@@ -16,11 +16,19 @@ public class AuthService : IAuthService
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _configuration;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(AppDbContext db, IConfiguration configuration)
+    public AuthService(
+        AppDbContext db,
+        IConfiguration configuration,
+        IEmailService emailService,
+        ILogger<AuthService> logger)
     {
         _db = db;
         _configuration = configuration;
+        _emailService = emailService;
+        _logger = logger;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterRequestDto dto, CancellationToken cancellationToken = default)
@@ -87,6 +95,32 @@ public class AuthService : IAuthService
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // Section 11 Compliance: Trigger welcome confirmation email in background
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _emailService.SendConfirmationEmailAsync(
+                    user.Email,
+                    user.FullName,
+                    "Welcome to EventCrew - Volunteer Registration Confirmed",
+                    $"Hello {user.FullName},\n\n" +
+                    "Welcome to EventCrew! Your official volunteer account has been created successfully.\n\n" +
+                    "With EventCrew, you can:\n" +
+                    "• Discover high-impact community events and festivals\n" +
+                    "• Build your verified skills profile\n" +
+                    "• Apply for event roles and track your application status in real-time\n\n" +
+                    "Next step: Complete your skills profile on our mobile or web app!\n\n" +
+                    "— The EventCrew Team\n" +
+                    "https://eventcrew.local"
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background email dispatch failed for new user {Email}", user.Email);
+            }
+        });
 
         // 5. Generate JWT token and return user info
         var token = GenerateJwtToken(user);

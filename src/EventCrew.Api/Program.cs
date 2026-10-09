@@ -63,6 +63,7 @@ builder.Services.AddScoped<IEventService, EventService>();
 // Student 2: Authentication, Volunteer Profiles and Applications
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IVolunteerService, VolunteerService>();
+builder.Services.AddHttpClient<IEmailService, EmailService>();
 
 // AI service (Python) — typed HttpClient
 builder.Services.AddHttpClient<IAgentService, AgentService>(client =>

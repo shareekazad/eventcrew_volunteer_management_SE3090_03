@@ -21,6 +21,21 @@ public class ApplicationResponseDto
     /// <summary>UTC timestamp of last organizer review, if any.</summary>
     public DateTime? ReviewedAt { get; set; }
 
+    /// <summary>Optional event title.</summary>
+    public string? EventTitle { get; set; }
+
+    /// <summary>Optional venue name.</summary>
+    public string? VenueName { get; set; }
+
+    /// <summary>Event start time in UTC.</summary>
+    public DateTime? EventStartDate { get; set; }
+
+    /// <summary>Event end time in UTC.</summary>
+    public DateTime? EventEndDate { get; set; }
+
+    /// <summary>Optional applied role name.</summary>
+    public string? RoleName { get; set; }
+
     /// <summary>Nested volunteer profile details including full name, email, rating, and skills.</summary>
     public VolunteerProfileResponseDto? Volunteer { get; set; }
 }

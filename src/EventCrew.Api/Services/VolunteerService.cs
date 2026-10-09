@@ -13,6 +13,8 @@ namespace EventCrew.Api.Services;
 public class VolunteerService : IVolunteerService
 {
     private readonly AppDbContext _db;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<VolunteerService> _logger;
 
     // ── Valid status transitions (state-machine) ────────────────────────────
     private static readonly Dictionary<string, IReadOnlySet<string>> AllowedTransitions =
@@ -25,9 +27,14 @@ public class VolunteerService : IVolunteerService
             ["Rejected"]    = new HashSet<string>(),   // terminal
         };
 
-    public VolunteerService(AppDbContext db)
+    public VolunteerService(
+        AppDbContext db,
+        IEmailService emailService,
+        ILogger<VolunteerService> logger)
     {
         _db = db;
+        _emailService = emailService;
+        _logger = logger;
     }
 
     // ── Profile Upsert ──────────────────────────────────────────────────────
@@ -119,20 +126,45 @@ public class VolunteerService : IVolunteerService
 
     public async Task<ApplicationResponseDto> ApplyForEventAsync(Guid volunteerId, ApplyEventDto dto)
     {
+        // Resolve volunteer profile (volunteerId could be user ID or profile ID)
+        var profile = await _db.VolunteerProfiles
+            .Include(vp => vp.User)
+            .FirstOrDefaultAsync(vp => vp.Id == volunteerId || vp.UserId == volunteerId);
+
+        if (profile is null)
+        {
+            var user = await _db.Users.FindAsync(volunteerId);
+            profile = new VolunteerProfile
+            {
+                Id               = Guid.NewGuid(),
+                UserId           = volunteerId,
+                EmergencyContact = user?.PhoneNumber ?? "N/A",
+                Bio              = string.Empty,
+                MaxHoursPerWeek  = 20,
+                RatingScore      = 5.00m,
+                CreatedAt        = DateTime.UtcNow,
+                UpdatedAt        = DateTime.UtcNow
+            };
+            _db.VolunteerProfiles.Add(profile);
+            await _db.SaveChangesAsync();
+        }
+
+        var actualVolunteerId = profile.Id;
+
         // Business rule: one application per volunteer per event (409 Conflict guard)
         bool alreadyApplied = await _db.Applications
-            .AnyAsync(a => a.EventId == dto.EventId && a.VolunteerId == volunteerId);
+            .AnyAsync(a => a.EventId == dto.EventId && a.VolunteerId == actualVolunteerId);
 
         if (alreadyApplied)
             throw new InvalidOperationException(
-                $"Volunteer {volunteerId} has already applied for event {dto.EventId}.");
+                $"Volunteer {actualVolunteerId} has already applied for event {dto.EventId}.");
 
         var now = DateTime.UtcNow;
         var application = new Application
         {
             Id                = Guid.NewGuid(),
             EventId           = dto.EventId,
-            VolunteerId       = volunteerId,
+            VolunteerId       = actualVolunteerId,
             RoleRequirementId = dto.RoleRequirementId,
             Status            = "Submitted",
             Notes             = dto.Notes,
@@ -144,6 +176,45 @@ public class VolunteerService : IVolunteerService
 
         _db.Applications.Add(application);
         await _db.SaveChangesAsync();
+
+        // Load Event and Role details for email and DTO
+        var ev = await _db.Events.Include(e => e.Venue).FirstOrDefaultAsync(e => e.Id == dto.EventId);
+        application.Event = ev!;
+        application.Volunteer = profile;
+
+        // Section 11 Compliance: Trigger application confirmation email in background
+        var recipientEmail = profile.User?.Email;
+        var recipientName = profile.User?.FullName ?? "Volunteer";
+        var eventTitle = ev?.Title ?? "Event";
+
+        if (!string.IsNullOrWhiteSpace(recipientEmail))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _emailService.SendConfirmationEmailAsync(
+                        recipientEmail,
+                        recipientName,
+                        $"Application Confirmed: {eventTitle}",
+                        $"Hello {recipientName},\n\n" +
+                        $"Your volunteer application for \"{eventTitle}\" has been successfully received!\n\n" +
+                        $"Application Details:\n" +
+                        $"• Event: {eventTitle}\n" +
+                        $"• Status: Submitted (Under Review)\n" +
+                        $"• Submitted At: {now:yyyy-MM-dd HH:mm} UTC\n" +
+                        (string.IsNullOrWhiteSpace(dto.Notes) ? "" : $"• Notes: {dto.Notes}\n") +
+                        $"\nThe organizer team will review your application. " +
+                        $"Track your live application status anytime in the EventCrew Mobile Application.\n\n" +
+                        $"Thank you,\nThe EventCrew Team"
+                    );
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to dispatch application confirmation email for {Email}", recipientEmail);
+                }
+            });
+        }
 
         return MapApplicationToDto(application);
     }
@@ -248,6 +319,11 @@ public class VolunteerService : IVolunteerService
             Notes             = app.Notes,
             AppliedAt         = app.AppliedAt,
             ReviewedAt        = app.ReviewedAt,
+            EventTitle        = app.Event?.Title,
+            VenueName         = app.Event?.Venue?.Name,
+            EventStartDate    = app.Event != null ? app.Event.StartDate.UtcDateTime : null,
+            EventEndDate      = app.Event != null ? app.Event.EndDate.UtcDateTime : null,
+            RoleName          = app.RoleRequirement?.RoleName,
             Volunteer         = app.Volunteer is null ? null : new VolunteerProfileResponseDto
             {
                 Id               = app.Volunteer.Id,
@@ -267,4 +343,37 @@ public class VolunteerService : IVolunteerService
                 }).ToList(),
             }
         };
+
+    public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsByVolunteerUserIdAsync(Guid userId)
+    {
+        var profile = await _db.VolunteerProfiles.FirstOrDefaultAsync(vp => vp.UserId == userId || vp.Id == userId);
+        if (profile is null) return Enumerable.Empty<ApplicationResponseDto>();
+
+        var applications = await _db.Applications
+            .AsNoTracking()
+            .Where(a => a.VolunteerId == profile.Id)
+            .Include(a => a.Event)
+                .ThenInclude(e => e.Venue)
+            .Include(a => a.RoleRequirement)
+            .OrderByDescending(a => a.AppliedAt)
+            .ToListAsync();
+
+        return applications.Select(MapApplicationToDto);
+    }
+
+    public async Task<IEnumerable<SkillDto>> GetAllSkillsAsync()
+    {
+        var skills = await _db.Skills
+            .AsNoTracking()
+            .OrderBy(s => s.Name)
+            .ToListAsync();
+
+        return skills.Select(s => new SkillDto
+        {
+            Id = s.Id,
+            Name = s.Name,
+            Category = s.Category,
+            ProficiencyLevel = "Intermediate"
+        });
+    }
 }

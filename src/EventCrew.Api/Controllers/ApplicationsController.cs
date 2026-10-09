@@ -53,6 +53,23 @@ public class ApplicationsController : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/applications
+    // Retrieves applications for the authenticated volunteer.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Get applications for the currently authenticated volunteer.</summary>
+    /// <response code="200">List of applications submitted by the volunteer.</response>
+    [HttpGet]
+    [Authorize]
+    [ProducesResponseType(typeof(IEnumerable<ApplicationResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetApplications()
+    {
+        var userId = GetCurrentVolunteerId();
+        var applications = await _volunteerService.GetApplicationsByVolunteerUserIdAsync(userId);
+        return Ok(applications);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // GET /api/applications/event/{eventId}
     // Organizer / Admin retrieves a paginated, optionally filtered list of applicants.
     // ─────────────────────────────────────────────────────────────────────────

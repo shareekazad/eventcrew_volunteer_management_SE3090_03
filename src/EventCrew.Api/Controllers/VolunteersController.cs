@@ -90,6 +90,22 @@ public class VolunteersController : ControllerBase
         return Ok(profile);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/volunteers/skills
+    // Returns all system skills for interactive skill builder
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Get all available skills in the platform.</summary>
+    /// <response code="200">List of skills.</response>
+    [HttpGet("skills")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(IEnumerable<SkillDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSkills()
+    {
+        var skills = await _volunteerService.GetAllSkillsAsync();
+        return Ok(skills);
+    }
+
     // ── Private Helpers ──────────────────────────────────────────────────────
 
     private Guid GetCurrentUserId()
