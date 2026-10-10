@@ -1,17 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../data/models/skill_model.dart';
 import '../../data/models/volunteer_profile_model.dart';
 import '../../data/repositories/profile_repository.dart';
 
-/// Volunteer profile screen — view + edit.
-///
-/// On load:
-///  - Calls GET /api/volunteers/me.
-///  - If the profile exists, shows view mode with an "Edit Profile" button.
-///  - If not found (404), shows an empty state with a "Create Profile" button.
-///
-/// In edit mode, the form submits to POST /api/volunteers/profile
-/// (upsert) and returns to view mode on success.
+/// Volunteer profile screen — view + edit, with skill picker.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -25,6 +18,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   VolunteerProfileModel? _profile;
+  List<SkillModel> _skillCatalog = [];
   bool _isEditing = false;
 
   @override
@@ -39,10 +33,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _errorMessage = null;
     });
     try {
+      // Call sequentially (avoids Future.wait generic-type headaches)
       final profile = await _repository.getMyProfile();
+      final skills = await _repository.getSkillCatalog();
+
       if (!mounted) return;
       setState(() {
         _profile = profile;
+        _skillCatalog = skills;
         _isLoading = false;
       });
     } catch (e) {
@@ -109,6 +107,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_isEditing) {
       return _ProfileEditForm(
         initial: _profile,
+        skillCatalog: _skillCatalog,
         onCancel: () => setState(() => _isEditing = false),
         onSaved: (updated) {
           setState(() {
@@ -256,7 +255,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 20),
           ],
 
-          _sectionTitle('Skills'),
+          _sectionTitle('Skills (${p.skills.length})'),
           if (p.skills.isEmpty)
             const Text('No skills added yet.',
                 style: TextStyle(color: Colors.black54))
@@ -273,7 +272,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           const SizedBox(height: 32),
 
-          // ---- Edit button ----
           SizedBox(
             width: double.infinity,
             height: 52,
@@ -320,17 +318,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 // ============================================================================
-// Edit form
+// Edit form (with skill picker)
 // ============================================================================
 class _ProfileEditForm extends StatefulWidget {
   const _ProfileEditForm({
     required this.initial,
+    required this.skillCatalog,
     required this.onCancel,
     required this.onSaved,
     required this.repository,
   });
 
   final VolunteerProfileModel? initial;
+  final List<SkillModel> skillCatalog;
   final VoidCallback onCancel;
   final ValueChanged<VolunteerProfileModel> onSaved;
   final ProfileRepository repository;
@@ -344,6 +344,10 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
   late final TextEditingController _emergencyCtrl;
   late final TextEditingController _bioCtrl;
   late final TextEditingController _hoursCtrl;
+
+  /// IDs of skills currently selected by the volunteer.
+  late final Set<String> _selectedSkillIds;
+
   bool _isSaving = false;
   String? _saveError;
 
@@ -355,6 +359,8 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
     _bioCtrl = TextEditingController(text: p?.bio ?? '');
     _hoursCtrl =
         TextEditingController(text: (p?.maxHoursPerWeek ?? 20).toString());
+    _selectedSkillIds =
+        (p?.skills.map((s) => s.id).toSet()) ?? <String>{};
   }
 
   @override
@@ -377,7 +383,7 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
         emergencyContact: _emergencyCtrl.text.trim(),
         bio: _bioCtrl.text.trim().isEmpty ? null : _bioCtrl.text.trim(),
         maxHoursPerWeek: int.parse(_hoursCtrl.text.trim()),
-        skillIds: widget.initial?.skills.map((s) => s.id).toList() ?? const [],
+        skillIds: _selectedSkillIds.toList(),
       );
       if (!mounted) return;
       widget.onSaved(updated);
@@ -399,10 +405,9 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Emergency Contact',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+            // ---- Emergency contact ----
+            const Text('Emergency Contact',
+                style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             TextFormField(
               controller: _emergencyCtrl,
@@ -420,10 +425,8 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
             ),
             const SizedBox(height: 20),
 
-            const Text(
-              'Bio',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+            // ---- Bio ----
+            const Text('Bio', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             TextFormField(
               controller: _bioCtrl,
@@ -436,10 +439,9 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
             ),
             const SizedBox(height: 12),
 
-            const Text(
-              'Max hours per week',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+            // ---- Max hours ----
+            const Text('Max hours per week',
+                style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             TextFormField(
               controller: _hoursCtrl,
@@ -455,6 +457,33 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
                 return null;
               },
             ),
+            const SizedBox(height: 24),
+
+            // ---- Skills picker ----
+            Row(
+              children: [
+                const Icon(Icons.workspace_premium, size: 20),
+                const SizedBox(width: 6),
+                const Text(
+                  'Skills',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 8),
+                if (_selectedSkillIds.isNotEmpty)
+                  Text(
+                    '(${_selectedSkillIds.length} selected)',
+                    style: const TextStyle(color: Colors.black54, fontSize: 13),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (widget.skillCatalog.isEmpty)
+              const Text(
+                'No skills available in the catalog.',
+                style: TextStyle(color: Colors.black54),
+              )
+            else
+              _buildSkillChipsByCategory(),
             const SizedBox(height: 24),
 
             if (_saveError != null)
@@ -503,6 +532,62 @@ class _ProfileEditFormState extends State<_ProfileEditForm> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Groups skills by category and shows one wrap of FilterChips per group.
+  Widget _buildSkillChipsByCategory() {
+    final byCategory = <String, List<SkillModel>>{};
+    for (final s in widget.skillCatalog) {
+      byCategory.putIfAbsent(s.category, () => []).add(s);
+    }
+
+    final categories = byCategory.keys.toList()..sort();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: categories.map((category) {
+        final skills = byCategory[category]!
+          ..sort((a, b) => a.name.compareTo(b.name));
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                category,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.black54,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: skills.map((skill) {
+                  final selected = _selectedSkillIds.contains(skill.id);
+                  return FilterChip(
+                    label: Text(skill.name),
+                    selected: selected,
+                    onSelected: (value) {
+                      setState(() {
+                        if (value) {
+                          _selectedSkillIds.add(skill.id);
+                        } else {
+                          _selectedSkillIds.remove(skill.id);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }

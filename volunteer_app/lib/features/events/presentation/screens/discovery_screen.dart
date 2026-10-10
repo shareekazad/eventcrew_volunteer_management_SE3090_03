@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/auth/auth_provider.dart';
 import '../../../applications/presentation/screens/my_applications_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
+import '../../../shifts/presentation/screens/my_shifts_screen.dart';
 import '../../data/models/event_model.dart';
 import '../../data/repositories/event_repository.dart';
 import '../widgets/event_card.dart';
@@ -16,7 +17,7 @@ import '../../../attendance/presentation/screens/attendance_screen.dart';
 /// - Search bar to filter events by title/description/category
 /// - Category filter chips (All, and each distinct category in the list)
 /// - Pull-to-refresh
-/// - Profile menu (My Profile, My Applications, Logout)
+/// - Profile menu (My Profile, My Applications, My Shifts, Logout)
 class DiscoveryScreen extends StatefulWidget {
   const DiscoveryScreen({super.key});
 
@@ -101,6 +102,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     );
   }
 
+  void _openMyShifts() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MyShiftsScreen()),
+    );
+  }
+
   void _openProfile() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -167,6 +174,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       case 'applications':
                         _openMyApplications();
                         break;
+                      case 'shifts':
+                        _openMyShifts();
+                        break;
                       case 'logout':
                         await _handleLogout();
                         break;
@@ -186,6 +196,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       child: ListTile(
                         leading: Icon(Icons.description_outlined),
                         title: Text('My Applications'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'shifts',
+                      child: ListTile(
+                        leading: Icon(Icons.schedule_outlined),
+                        title: Text('My Shifts'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),

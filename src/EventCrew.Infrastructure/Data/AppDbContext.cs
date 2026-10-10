@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
     // ---- Student 3: Shifts ----
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
+    public DbSet<ShiftSwapRequest> ShiftSwapRequests => Set<ShiftSwapRequest>();
 
     // ---- Student 4: Attendance & QR ----
     public DbSet<QrCodeToken> QrCodeTokens => Set<QrCodeToken>();

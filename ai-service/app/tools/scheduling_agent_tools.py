@@ -10,6 +10,7 @@ Implements 3 tools (Section 9.1):
 import logging
 import uuid
 from datetime import datetime, timedelta
+
 from app.tools.http_client import BackendClient, BackendError
 from app.tools.matching_tools import log_agent_observability
 
@@ -31,10 +32,15 @@ SCHEDULING_ALLOWED_TOOLS = {
 async def fetch_event_shifts(event_id: str) -> list[dict]:
     """
     Retrieves all existing shifts for an event from the backend.
+
+    Calls the ASP.NET Core ShiftsController endpoint:
+        GET /api/Shifts/by-event/{eventId}
+
+    Fails safely — returns [] if the backend is unreachable or errors.
     """
     try:
         async with BackendClient() as client:
-            data = await client.get(f"/api/Events/{event_id}/shifts")
+            data = await client.get(f"/api/Shifts/by-event/{event_id}")
             if not data or not isinstance(data, list):
                 return []
             return data
@@ -59,7 +65,8 @@ def propose_shift_slots(
     Deterministic shift-slot proposal.
 
     Splits the event into N equal shifts per role, assigns candidates
-    round-robin, respects the max 6-hour shift rule.
+    round-robin (each candidate only one shift — no double-booking),
+    respects the max 6-hour shift rule.
     """
     if not role_requirements:
         return []
@@ -88,14 +95,14 @@ def propose_shift_slots(
         if shift_duration > timedelta(hours=MAX_SHIFT_HOURS):
             shift_duration = timedelta(hours=MAX_SHIFT_HOURS)
 
-        # Each candidate assigned to only ONE shift (round-robin, no reuse)
+        # Each candidate assigned to only ONE shift (round-robin, no reuse).
         # If we have fewer candidates than shifts, some shifts go unfilled
         # — this is captured as a low-severity "understaffed" conflict.
         for shift_idx in range(num_shifts):
             shift_start = event_start + (shift_duration * shift_idx)
             shift_end = shift_start + shift_duration
 
-            # Each candidate gets only one shift — no double-booking possible
+            # Each candidate gets only one shift — no double-booking possible.
             slice_start = shift_idx * headcount
             slice_end = slice_start + headcount
             assigned = candidates[slice_start:slice_end]
@@ -132,7 +139,7 @@ def check_shift_conflicts(proposed_shifts: list[dict]) -> list[dict]:
     """
     conflicts: list[dict] = []
 
-    # 1. Double-booking check (downgraded to medium so we report, not fail)
+    # 1. Double-booking check (downgraded to medium so we report, not fail).
     candidate_schedule: dict[str, list[tuple[datetime, datetime]]] = {}
 
     for shift in proposed_shifts:
@@ -158,7 +165,7 @@ def check_shift_conflicts(proposed_shifts: list[dict]) -> list[dict]:
                     })
             intervals.append((start, end))
 
-    # 2. Shift too long (medium)
+    # 2. Shift too long (medium).
     for shift in proposed_shifts:
         start = datetime.fromisoformat(shift["start_time"])
         end = datetime.fromisoformat(shift["end_time"])
@@ -171,7 +178,7 @@ def check_shift_conflicts(proposed_shifts: list[dict]) -> list[dict]:
                 "affected_ids": [shift["shift_id"]],
             })
 
-    # 3. Understaffed shifts (low)
+    # 3. Understaffed shifts (low).
     for shift in proposed_shifts:
         assigned = len(shift.get("assigned_candidates", []))
         capacity = shift.get("capacity", 0)

@@ -38,11 +38,11 @@ public class ApplicationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Apply([FromBody] ApplyEventDto dto)
     {
-        var volunteerId = GetCurrentVolunteerId();
+        var userId = GetCurrentUserId();
 
         try
         {
-            var result = await _volunteerService.ApplyForEventAsync(volunteerId, dto);
+            var result = await _volunteerService.ApplyForEventAsync(userId, dto);
             return CreatedAtAction(nameof(GetApplicantsByEvent),
                 new { eventId = result.EventId }, result);
         }
@@ -50,6 +50,25 @@ public class ApplicationsController : ControllerBase
         {
             return Conflict(new { message = ex.Message });
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/applications/mine
+    // Volunteer retrieves their own applications with status.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Get all applications submitted by the current volunteer.</summary>
+    /// <response code="200">List of the volunteer's applications.</response>
+    /// <response code="401">Unauthenticated.</response>
+    /// <response code="403">User is not a Volunteer.</response>
+    [HttpGet("mine")]
+    [Authorize(Roles = "Volunteer")]
+    [ProducesResponseType(typeof(IEnumerable<ApplicationResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyApplications()
+    {
+        var userId = GetCurrentUserId();
+        var results = await _volunteerService.GetApplicationsByVolunteerIdAsync(userId);
+        return Ok(results);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -114,33 +133,14 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-        // ─────────────────────────────────────────────────────────────────────────
-    // GET /api/applications/mine
-    // Volunteer retrieves their own applications with status.
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>Get all applications submitted by the current volunteer.</summary>
-    /// <response code="200">List of the volunteer's applications.</response>
-    /// <response code="401">Unauthenticated.</response>
-    /// <response code="403">User is not a Volunteer.</response>
-    [HttpGet("mine")]
-    [Authorize(Roles = "Volunteer")]
-    [ProducesResponseType(typeof(IEnumerable<ApplicationResponseDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetMyApplications()
-    {
-        var volunteerId = GetCurrentVolunteerId();
-        var results = await _volunteerService.GetApplicationsByVolunteerIdAsync(volunteerId);
-        return Ok(results);
-    }
-
     // ── Private Helpers ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Resolves the current volunteer's profile ID from the JWT subject claim.
-    /// In a full implementation, this would look up the VolunteerProfile by UserId.
-    /// Here we parse it directly as the profile GUID from the token for simplicity.
+    /// Resolves the current user's ID from the JWT.
+    /// Note: this is the USER id, NOT the VolunteerProfile.id.
+    /// The service layer resolves the VolunteerProfile by user id when needed.
     /// </summary>
-    private Guid GetCurrentVolunteerId()
+    private Guid GetCurrentUserId()
     {
         var sub = User.FindFirstValue(ClaimTypes.NameIdentifier)
                ?? User.FindFirstValue("sub")

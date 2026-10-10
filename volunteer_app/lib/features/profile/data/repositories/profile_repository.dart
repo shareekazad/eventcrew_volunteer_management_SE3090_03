@@ -1,15 +1,32 @@
 import '../../../../core/api/api_client.dart';
+import '../models/skill_model.dart';
 import '../models/volunteer_profile_model.dart';
 
 /// Repository for the volunteer's own profile.
 ///
 /// Talks to:
+/// - GET  /api/skills              — fetch the skill catalog
 /// - GET  /api/volunteers/me       — fetch the current volunteer's profile
 /// - POST /api/volunteers/profile  — create or update the profile
 class ProfileRepository {
   ProfileRepository({ApiClient? client}) : _client = client ?? ApiClient();
 
   final ApiClient _client;
+
+  /// GET /api/skills — full skill catalog.
+  Future<List<SkillModel>> getSkillCatalog() async {
+    final raw = await _client.get('/api/skills');
+
+    if (raw is! List) {
+      throw ApiException(
+        'Unexpected response shape: expected a list of skills.',
+      );
+    }
+
+    return raw
+        .map((json) => SkillModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
 
   /// GET /api/volunteers/me.
   /// Returns null when the profile does not exist yet (404).
@@ -30,7 +47,6 @@ class ProfileRepository {
   }
 
   /// POST /api/volunteers/profile — create or update profile.
-  /// Returns the updated profile.
   Future<VolunteerProfileModel> upsertProfile({
     required String emergencyContact,
     String? bio,

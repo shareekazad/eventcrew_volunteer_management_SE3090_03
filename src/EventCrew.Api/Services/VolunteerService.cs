@@ -117,22 +117,44 @@ public class VolunteerService : IVolunteerService
 
     // ── Application Submission ──────────────────────────────────────────────
 
-    public async Task<ApplicationResponseDto> ApplyForEventAsync(Guid volunteerId, ApplyEventDto dto)
+    public async Task<ApplicationResponseDto> ApplyForEventAsync(Guid userId, ApplyEventDto dto)
     {
-        // Business rule: one application per volunteer per event (409 Conflict guard)
+        // The caller passes the USER id (from the JWT).
+        // We must resolve the VolunteerProfile.id — a different row.
+        var profile = await _db.VolunteerProfiles
+            .FirstOrDefaultAsync(vp => vp.UserId == userId);
+
+        if (profile is null)
+        {
+            throw new InvalidOperationException(
+                "No volunteer profile found for this user. Please create your profile before applying.");
+        }
+
+        var volunteerProfileId = profile.Id;
+
+        // Business rule: one application per volunteer profile per event (409 Conflict guard)
         bool alreadyApplied = await _db.Applications
-            .AnyAsync(a => a.EventId == dto.EventId && a.VolunteerId == volunteerId);
+            .AnyAsync(a => a.EventId == dto.EventId && a.VolunteerId == volunteerProfileId);
 
         if (alreadyApplied)
+        {
             throw new InvalidOperationException(
-                $"Volunteer {volunteerId} has already applied for event {dto.EventId}.");
+                $"You have already applied for this event.");
+        }
+
+        // Verify event exists
+        var eventExists = await _db.Events.AnyAsync(e => e.Id == dto.EventId);
+        if (!eventExists)
+        {
+            throw new InvalidOperationException("Event does not exist.");
+        }
 
         var now = DateTime.UtcNow;
         var application = new Application
         {
             Id                = Guid.NewGuid(),
             EventId           = dto.EventId,
-            VolunteerId       = volunteerId,
+            VolunteerId       = volunteerProfileId,   // ← use the profile id, not the user id
             RoleRequirementId = dto.RoleRequirementId,
             Status            = "Submitted",
             Notes             = dto.Notes,
@@ -179,11 +201,18 @@ public class VolunteerService : IVolunteerService
 
     // ── My Applications (volunteer self-service) ────────────────────────────
 
-    public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsByVolunteerIdAsync(Guid volunteerId)
+    public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsByVolunteerIdAsync(Guid userId)
     {
+        // Resolve the VolunteerProfile.id from the User.id
+        var profile = await _db.VolunteerProfiles
+            .FirstOrDefaultAsync(vp => vp.UserId == userId);
+
+        if (profile is null)
+            return Enumerable.Empty<ApplicationResponseDto>();
+
         var applications = await _db.Applications
             .AsNoTracking()
-            .Where(a => a.VolunteerId == volunteerId)
+            .Where(a => a.VolunteerId == profile.Id)
             .Include(a => a.Volunteer)
                 .ThenInclude(v => v.User)
             .Include(a => a.Volunteer)

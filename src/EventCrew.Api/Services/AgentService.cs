@@ -11,8 +11,7 @@ namespace EventCrew.Api.Services;
 /// Service that bridges ASP.NET Core to the Python AI service.
 ///
 /// Responsibilities:
-/// 1. Call the Python AI service — single-agent (/agent/plan) or
-///    full 4-agent workflow (/workflow/plan).
+/// 1. Call the Python AI service — full 4-agent workflow (/workflow/plan).
 /// 2. Persist workflow runs and every tool call as an audit trail.
 /// 3. Manage human approval: approve / reject with audit info + email.
 /// 4. Volunteer matching gateway for Student 2's matching agent.
@@ -49,9 +48,12 @@ public class AgentService : IAgentService
     public async Task<WorkflowRunStatusDto> PlanStaffingAsync(Guid eventId, CancellationToken cancellationToken = default)
     {
         // ── 1. Pre-fetch candidates from DB ──────────────────────────────
+        // Include every application for this event (except Rejected/Cancelled),
+        // so the MatchingAgent has real candidate data to work with.
         var applications = await _db.Applications
             .Where(a => a.EventId == eventId
-                        && (a.Status == "Submitted" || a.Status == "UnderReview"))
+                        && a.Status != "Rejected"
+                        && a.Status != "Cancelled")
             .Include(a => a.Volunteer)
                 .ThenInclude(v => v.User)
             .Include(a => a.Volunteer)

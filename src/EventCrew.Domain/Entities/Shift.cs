@@ -32,6 +32,19 @@ public class Shift
     [Column("capacity")]
     public int Capacity { get; set; }
 
+    [Required]
+    [MaxLength(20)]
+    [Column("status")]
+    public string Status { get; set; } = "Scheduled";
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    // ---- Navigation ----
     public ICollection<ShiftAssignment> Assignments { get; set; } = new List<ShiftAssignment>();
     public ICollection<QrCodeToken> QrCodeTokens { get; set; } = new List<QrCodeToken>();
+    public ICollection<ShiftSwapRequest> SwapRequests { get; set; } = new List<ShiftSwapRequest>();
 }
