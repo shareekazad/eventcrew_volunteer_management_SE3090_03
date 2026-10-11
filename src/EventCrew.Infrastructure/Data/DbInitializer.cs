@@ -6,6 +6,10 @@ namespace EventCrew.Infrastructure.Data;
 
 public static class DbInitializer
 {
+    // ── Known demo passwords (documented in README) ────────────────────────
+    // Organizer login: john@eventcrew.com / Organizer123!
+    private const string OrganizerDemoPassword = "Organizer123!";
+
     public static async Task SeedAsync(AppDbContext context)
     {
         try
@@ -17,40 +21,51 @@ public static class DbInitializer
             // Database might already exist or migrations managed externally
         }
 
-        if (await context.Users.AnyAsync())
+        // ── Idempotent: seed the Organizer if missing (independent of other data) ──
+        var organizerExists = await context.Users
+            .AnyAsync(u => u.Role == "Organizer");
+        if (!organizerExists)
         {
-            return; // DB already seeded
+            var organizerId = Guid.Parse("a0000000-0000-0000-0000-000000000001");
+            var organizer = new User
+            {
+                Id = organizerId,
+                FullName = "John",
+                Email = "john@eventcrew.com",
+                Role = "Organizer",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(OrganizerDemoPassword),
+                PhoneNumber = "0771234567",
+                IsActive = true
+            };
+            context.Users.Add(organizer);
+
+            // Also seed the demo TechFest event for this organizer if no events exist
+            if (!await context.Events.AnyAsync())
+            {
+                var techFestEvent = new Event
+                {
+                    Id = Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+                    OrganizerId = organizerId,
+                    Title = "TechFest 2026",
+                    Description = "Annual premier technology conference & innovation showcase.",
+                    Category = "Technology",
+                    StartDate = DateTimeOffset.UtcNow.AddDays(30),
+                    EndDate = DateTimeOffset.UtcNow.AddDays(32),
+                    Status = EventStatus.Published,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+                context.Events.Add(techFestEvent);
+            }
+
+            await context.SaveChangesAsync();
         }
 
-        // 1. Seed Lead Organizer User (John)
-        var johnUser = new User
+        // ── Full demo seed (runs only when the DB is truly empty) ──────────
+        if (await context.Users.AnyAsync(u => u.Role == "Volunteer"))
         {
-            Id = Guid.Parse("a0000000-0000-0000-0000-000000000001"),
-            FullName = "John",
-            Email = "john@eventcrew.com",
-            Role = "Organizer",
-            PasswordHash = "hashed_default_password_dev_123",
-            PhoneNumber = "0771234567",
-            IsActive = true
-        };
-        context.Users.Add(johnUser);
-
-        // 2. Seed Sample Event (TechFest 2026) organized by John
-        var eventId = Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6");
-        var techFestEvent = new Event
-        {
-            Id = eventId,
-            OrganizerId = johnUser.Id,
-            Title = "TechFest 2026",
-            Description = "Annual premier technology conference & innovation showcase.",
-            Category = "Technology",
-            StartDate = DateTimeOffset.UtcNow.AddDays(30),
-            EndDate = DateTimeOffset.UtcNow.AddDays(32),
-            Status = EventStatus.Published,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow
-        };
-        context.Events.Add(techFestEvent);
+            return; // Volunteers already seeded; skip the rest
+        }
 
         // 3. Seed 5 Standard Skills
         var skills = new List<Skill>
@@ -69,7 +84,7 @@ public static class DbInitializer
         var logisticsSkill = skills[3];
         var itSupportSkill = skills[4];
 
-        // 4. Seed 4 Team Members as Volunteer Users + VolunteerProfiles + VolunteerSkills
+        // 4. Seed 4 Volunteer Users + Profiles + VolunteerSkills
         var teamMembers = new[]
         {
             new
@@ -116,6 +131,31 @@ public static class DbInitializer
 
         var now = DateTime.UtcNow;
 
+        // Ensure the TechFest event exists for applications to reference
+        var techFestEvent = await context.Events
+            .FirstOrDefaultAsync(e => e.Id == Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"));
+
+        if (techFestEvent is null)
+        {
+            // Organizer must exist already
+            var organizer = await context.Users.FirstAsync(u => u.Role == "Organizer");
+            techFestEvent = new Event
+            {
+                Id = Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+                OrganizerId = organizer.Id,
+                Title = "TechFest 2026",
+                Description = "Annual premier technology conference & innovation showcase.",
+                Category = "Technology",
+                StartDate = DateTimeOffset.UtcNow.AddDays(30),
+                EndDate = DateTimeOffset.UtcNow.AddDays(32),
+                Status = EventStatus.Published,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            context.Events.Add(techFestEvent);
+            await context.SaveChangesAsync();
+        }
+
         foreach (var (member, idx) in teamMembers.Select((m, i) => (m, i)))
         {
             var user = new User
@@ -124,7 +164,8 @@ public static class DbInitializer
                 FullName = member.Name,
                 Email = member.Email,
                 Role = "Volunteer",
-                PasswordHash = "hashed_default_password_dev_123",
+                // Use BCrypt so these accounts CAN log in if needed for demo
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Volunteer123!"),
                 PhoneNumber = "0771234567",
                 IsActive = true
             };
@@ -153,7 +194,7 @@ public static class DbInitializer
                 });
             }
 
-            // 5. Seed Applications for TechFest 2026
+            // Seed Application for TechFest 2026
             var app = new Application
             {
                 Id = Guid.NewGuid(),
