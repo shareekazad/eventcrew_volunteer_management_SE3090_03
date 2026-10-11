@@ -20,7 +20,7 @@ import { eventService } from '../services/eventService';
 import { agentService } from '../services/agentService';
 import { AIPlanPanel } from '../components/events/AIPlanPanel';
 import { EditEventModal } from '../components/events/EditEventModal';
-import { DEMO_ORGANIZER_TOKEN } from '../services/api';
+import { getCurrentUserId } from '../services/api';
 import type { EventDto, EventStatus } from '../types/event';
 import type { WorkflowRunDetailDto } from '../types/agent';
 
@@ -500,11 +500,5 @@ function getAllowedTransitions(current: EventStatus): EventStatus[] {
 }
 
 function extractReviewerId(): string {
-  try {
-    const payload = DEMO_ORGANIZER_TOKEN.split('.')[1];
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    return decoded.sub as string;
-  } catch {
-    return 'a0000000-0000-0000-0000-000000000001';
-  }
+  return getCurrentUserId();
 }

@@ -1,36 +1,86 @@
 import axios from 'axios';
 
-// Valid pre-signed JWT token matching backend secret (DevFallbackSecretKeyForLocalTestingOnly12345!),
-// issuer (EventCrew), audience (EventCrewUsers), role (Organizer), and email (organizer@eventcrew.com)
-export const DEMO_ORGANIZER_TOKEN =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJuYW1lIjoiTGVhZCBPcmdhbml6ZXIiLCJlbWFpbCI6Im9yZ2FuaXplckBldmVudGNyZXcuY29tIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiT3JnYW5pemVyIiwicm9sZSI6Ik9yZ2FuaXplciIsImlzcyI6IkV2ZW50Q3JldyIsImF1ZCI6IkV2ZW50Q3Jld1VzZXJzIiwiZXhwIjoyMTA2MTM5ODkwfQ.ApOM7FEdyaxxhxPEhl5LeGKN6OXJdLRqhT2vAMoNIGo';
-
-export const DEV_JWT_SECRET = 'DevFallbackSecretKeyForLocalTestingOnly12345!';
-
-/**
- * Helper to generate or provide a valid development Organizer JWT token.
- * Token contains role "Organizer" and email "organizer@eventcrew.com", signed with dev key.
- */
-export const getDevOrganizerToken = (): string => {
-  return DEMO_ORGANIZER_TOKEN;
-};
-
-export const generateDevOrganizerToken = (_email = 'organizer@eventcrew.com', _role = 'Organizer'): string => {
-  return DEMO_ORGANIZER_TOKEN;
-};
+// ── API base URL ────────────────────────────────────────────────────────────
+// In dev: Vite's proxy handles /api → http://localhost:5100
+// In prod: VITE_API_BASE_URL is set to the deployed Railway API URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL ? `${API_BASE_URL}/api` : '/api',
   headers: {
     'Content-Type': 'application/json',
   },
   timeout: 60000,
 });
 
-// Request interceptor: attach JWT bearer token from localStorage or fallback demo token
+// ── Auth helpers ────────────────────────────────────────────────────────────
+// Reads the current JWT from localStorage. Returns null if not logged in.
+export const getAuthToken = (): string | null => {
+  return localStorage.getItem('token') || localStorage.getItem('jwt_token');
+};
+
+export const setAuthToken = (token: string): void => {
+  localStorage.setItem('token', token);
+};
+
+export const clearAuthToken = (): void => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('jwt_token');
+};
+
+/**
+ * Demo helper: logs in as the seeded organizer using the real /api/Auth/login
+ * endpoint. The returned token is signed by the backend and stored in
+ * localStorage — nothing is hardcoded.
+ *
+ * Credentials come from the seeded DbInitializer (see backend README).
+ */
+export const autoLoginAsOrganizer = async (): Promise<string> => {
+  const response = await apiClient.post('/Auth/login', {
+    email: 'john@eventcrew.com',
+    password: 'Organizer123!',
+  });
+  const token: string = response.data.token;
+  setAuthToken(token);
+  return token;
+};
+
+/**
+ * Ensures we have a valid token. If none is stored, auto-logs in as the
+ * demo organizer. Idempotent — call this on app startup.
+ */
+export const ensureAuthenticated = async (): Promise<string | null> => {
+  const existing = getAuthToken();
+  if (existing) return existing;
+
+  try {
+    return await autoLoginAsOrganizer();
+  } catch (err) {
+    console.warn('Auto-login failed:', err);
+    return null;
+  }
+};
+
+/**
+ * Decodes the `sub` (user id) claim from the current JWT. Returns a fallback
+ * organizer GUID if the token is missing or malformed.
+ */
+export const getCurrentUserId = (): string => {
+  const token = getAuthToken();
+  if (!token) return 'a0000000-0000-0000-0000-000000000001';
+  try {
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return decoded.sub as string;
+  } catch {
+    return 'a0000000-0000-0000-0000-000000000001';
+  }
+};
+
+// ── Request interceptor: attach Authorization header if we have a token ──
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token') || localStorage.getItem('jwt_token') || getDevOrganizerToken();
+    const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -39,7 +89,7 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for consistent error extraction
+// ── Response interceptor for consistent error extraction ──
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -47,7 +97,7 @@ apiClient.interceptors.response.use(
       error.response?.data?.message ||
       error.response?.data?.title ||
       (error.response?.status === 404 ? 'Resource not found' : '') ||
-      (error.response?.status === 401 ? 'Unauthorized: Please check credentials' : '') ||
+      (error.response?.status === 401 ? 'Unauthorized: Please log in' : '') ||
       (error.response?.status === 403 ? 'Forbidden: Organizer permission required' : '') ||
       error.message ||
       'An unexpected error occurred';

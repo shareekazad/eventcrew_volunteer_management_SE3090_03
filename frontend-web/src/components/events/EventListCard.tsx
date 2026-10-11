@@ -10,9 +10,11 @@ import type { EventDto, EventStatus } from '../../types/event';
 
 interface Props {
   event: EventDto;
+  /** Optional click handler. If not provided, defaults to navigating to /events/{id}. */
+  onView?: (event: EventDto) => void;
 }
 
-export const EventListCard: React.FC<Props> = ({ event }) => {
+export const EventListCard: React.FC<Props> = ({ event, onView }) => {
   const navigate = useNavigate();
   const statusStyle = statusBadgeStyle(event.status);
   const totalVolunteers = event.roleRequirements.reduce(
@@ -20,9 +22,17 @@ export const EventListCard: React.FC<Props> = ({ event }) => {
     0
   );
 
+  const handleClick = () => {
+    if (onView) {
+      onView(event);
+    } else {
+      navigate(`/events/${event.id}`);
+    }
+  };
+
   return (
     <div
-      onClick={() => navigate(`/events/${event.id}`)}
+      onClick={handleClick}
       className="rounded-2xl border border-slate-200 bg-white p-5 hover:border-brand-300 hover:shadow-md transition-all cursor-pointer"
     >
       {/* Header: title + status */}

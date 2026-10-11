@@ -9,7 +9,7 @@ import { StepRoleRequirements } from '../components/events/StepRoleRequirements'
 import { StepReview } from '../components/events/StepReview';
 import { useEventWizardStore } from '../stores/eventWizardStore';
 import { eventService } from '../services/eventService';
-import { DEMO_ORGANIZER_TOKEN } from '../services/api';
+import { getCurrentUserId } from '../services/api';
 import type { CreateEventDto } from '../types/event';
 
 export const EventWizardPage: React.FC = () => {
@@ -175,12 +175,5 @@ export const EventWizardPage: React.FC = () => {
  * from the auth context, not from decoding the token client-side.
  */
 function extractOrganizerIdFromToken(): string {
-  try {
-    const payload = DEMO_ORGANIZER_TOKEN.split('.')[1];
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    return decoded.sub as string;
-  } catch {
-    // Fallback GUID — matches the seeded organizer from earlier tests.
-    return 'ba9315ea-8714-4f39-a11e-00675f796739';
-  }
+  return getCurrentUserId();
 }

@@ -14,20 +14,23 @@ import {
   Check,
   CalendarDays,
 } from 'lucide-react';
-import { getDevOrganizerToken } from '../services/api';
+import { autoLoginAsOrganizer } from '../services/api';
 import { useApplicationStore } from '../stores/applicationStore';
 
 export const Sidebar: React.FC = () => {
   const [tokenCopied, setTokenCopied] = useState(false);
   const fetchApplicants = useApplicationStore((state) => state.fetchApplicants);
 
-  const copyToken = () => {
-    const token = getDevOrganizerToken();
-    localStorage.setItem('token', token);
-    navigator.clipboard.writeText(token);
-    setTokenCopied(true);
-    setTimeout(() => setTokenCopied(false), 2000);
-    fetchApplicants();
+  const copyToken = async () => {
+    try {
+      const token = await autoLoginAsOrganizer();
+      navigator.clipboard.writeText(token);
+      setTokenCopied(true);
+      setTimeout(() => setTokenCopied(false), 2000);
+      fetchApplicants();
+    } catch {
+      setTokenCopied(false);
+    }
   };
 
   const navItemClass = (isActive: boolean) =>
@@ -63,7 +66,6 @@ export const Sidebar: React.FC = () => {
               to="/dashboard"
               className={({ isActive }) => navItemClass(isActive)}
               onClick={(e) => {
-                // If not implemented, navigate to applicants
                 if (window.location.pathname === '/dashboard') e.preventDefault();
               }}
             >
@@ -138,12 +140,12 @@ export const Sidebar: React.FC = () => {
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-white font-medium text-[11px]">
               <Radio className="w-3 h-3 text-mint animate-pulse" />
-              API: 5100
+              API
             </span>
             <button
               onClick={copyToken}
               className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#1F4E3E] hover:bg-[#275F4C] text-mint text-[10px] font-semibold transition-colors"
-              title="Copy Dev Organizer JWT"
+              title="Login as demo organizer and copy JWT"
             >
               {tokenCopied ? (
                 <>

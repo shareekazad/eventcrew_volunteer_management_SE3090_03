@@ -735,7 +735,6 @@ const DeveloperDetails: React.FC<{
             {run.reviewedByUserId && (
               <DevField label="Reviewed by (user ID)" value={run.reviewedByUserId} mono />
             )}
-            {run.reviewedAt && <DevField label="Reviewed at" value={run.reviewedAt} />}
           </div>
 
           {workflow.proposed_shifts && workflow.proposed_shifts.length > 0 && (
