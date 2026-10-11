@@ -117,13 +117,20 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// Only redirect to HTTPS in production.
-// In dev, the API runs on HTTP only — redirecting breaks Flutter web,
-// React on localhost, and Swagger.
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
+// ── HTTPS Redirect — DISABLED for cloud deployment ──────────────────────────
+// Railway/Render terminate TLS at their edge and forward plain HTTP to the
+// container. If we call UseHttpsRedirection(), ASP.NET Core constructs a
+// redirect to an http:// URL (it doesn't trust the X-Forwarded-Proto header
+// by default), which breaks all POST/PUT/DELETE requests from clients.
+//
+// Public HTTPS is guaranteed by Railway's reverse proxy — every request
+// reaches us over HTTPS at the edge and is validated there.
+//
+// To re-enable redirect behavior safely, configure ForwardedHeaders:
+//   app.UseForwardedHeaders(new ForwardedHeadersOptions {
+//       ForwardedHeaders = ForwardedHeaders.XForwardedProto
+//   });
+// before calling UseHttpsRedirection(). This is optional.
 
 app.UseCors("AllowFrontends");
 
