@@ -50,7 +50,6 @@ builder.Services.AddScoped<IVolunteerService, VolunteerService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAttendanceService, AttendanceService>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
-;
 
 // AI service (Python) — typed HttpClient
 builder.Services.AddHttpClient<IAgentService, AgentService>(client =>
@@ -113,11 +112,10 @@ builder.Services.AddSwaggerGen(c =>
 // ─────────────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Swagger is enabled in all environments so evaluators can verify endpoints
+// on the deployed API (Section 14 — Swagger URL is a required deliverable).
+app.UseSwagger();
+app.UseSwaggerUI();
 
 // Only redirect to HTTPS in production.
 // In dev, the API runs on HTTP only — redirecting breaks Flutter web,
@@ -132,6 +130,15 @@ app.UseCors("AllowFrontends");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// ── Health endpoint (spec Section 14 — required for deployment verification) ─
+app.MapGet("/health", () => Results.Ok(new
+{
+    status      = "healthy",
+    service     = "EventCrew.Api",
+    timestamp   = DateTimeOffset.UtcNow,
+    environment = app.Environment.EnvironmentName
+})).AllowAnonymous();
 
 // ── Automatic database seeding on startup ───────────────────────────────────
 using (var scope = app.Services.CreateScope())

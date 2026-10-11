@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Build outputs
+**/bin/
+**/obj/
+**/node_modules/
+**/build/
+**/dist/
+**/.next/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Python
+ai-service/.venv/
+ai-service/__pycache__/
+ai-service/**/*.pyc
+ai-service/.pytest_cache/
+
+# Flutter
+volunteer_app/.dart_tool/
+volunteer_app/build/
+volunteer_app/.flutter-plugins
+volunteer_app/android/build/
+
+# Logs & env
+*.log
+.env
+.env.local
+
+# Docs
+docs/
+*.md
