@@ -514,3 +514,14 @@ volunteer_app/**/.swift_pm.lock
 frontend-web/node_modules/
 frontend-web/dist/
 frontend-web/.vite/
+
+# Local secrets and test artifacts
+.env
+.env.local
+*.local.json
+login.json
+venue.json
+update.json
+hashtest.json
+event.json
+testreg.json
