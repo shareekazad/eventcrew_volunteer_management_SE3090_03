@@ -108,17 +108,9 @@ export const EventsListPage: React.FC = () => {
             {events.length} event{events.length !== 1 ? 's' : ''} found
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {events.map((event) => (
-              <EventListCard
-                key={event.id}
-                event={event}
-                onView={(e) => {
-                  // Navigate to detail — for now, alert with ID (detail page comes later)
-                  // TODO: replace with a proper detail route once built
-                  alert(`Event: ${e.title}\nStatus: ${e.status}\nRoles: ${e.roleRequirements.length}`);
-                }}
-              />
-            ))}
+          {events.map((event) => (
+  <EventListCard key={event.id} event={event} />
+))}
           </div>
         </>
       )}
