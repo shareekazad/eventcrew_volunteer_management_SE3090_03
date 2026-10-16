@@ -34,6 +34,8 @@ export const clearAuthToken = (): void => {
  * localStorage — nothing is hardcoded.
  *
  * Credentials come from the seeded DbInitializer (see backend README).
+ * NOTE: john@eventcrew.com is the seeded organizer that exists in BOTH
+ * the local Docker DB and the deployed Railway DB.
  */
 export const autoLoginAsOrganizer = async (): Promise<string> => {
   const response = await apiClient.post('/Auth/login', {
