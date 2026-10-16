@@ -56,6 +56,14 @@ public class ResendEmailService : IEmailService
             return false;
         }
 
+        // ─── DEMO LOG: visible in the API terminal during viva ───
+        _logger.LogInformation("═══════════════════════════════════════");
+        _logger.LogInformation("📧 EMAIL TRIGGERED via Resend");
+        _logger.LogInformation("   To:      {To}", toAddress);
+        _logger.LogInformation("   Subject: {Subject}", subject);
+        _logger.LogInformation("═══════════════════════════════════════");
+        // ─── END DEMO LOG ───
+
         // Dry run: log and return without hitting the network
         if (_settings.DryRun || string.IsNullOrWhiteSpace(_settings.ResendApiKey))
         {

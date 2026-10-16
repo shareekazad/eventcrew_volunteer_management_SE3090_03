@@ -11,14 +11,13 @@ class ApiConfig {
 
   /// Set to true to use the production API URL.
   /// Set to false to use the local dev API URL.
-  static const bool useProduction = false;
+  static const bool useProduction = true;
 
   /// Development base URL (ASP.NET Core running locally).
   static const String devBaseUrl = 'http://localhost:5100';
 
   /// Production base URL (to be filled after deployment).
-  static const String prodBaseUrl = 'https://eventcrew-api.onrender.com';
-
+  static const String prodBaseUrl = 'https://eventcrewvolunteermanagementse309003-production.up.railway.app';
   /// The active base URL.
   static String get baseUrl => useProduction ? prodBaseUrl : devBaseUrl;
 
